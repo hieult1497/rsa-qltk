@@ -211,6 +211,7 @@ const SUPABASE_URL='https://oaeywvuibltnokdkbpvg.supabase.co';
 const SUPABASE_KEY='sb_publishable_UW_EwaozbQ_ZiI4-COHFKg_yPOTKT5A';
 const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 let ME=null, CACHE={}, CATS={}, ACCOUNTS=[], PERMS={};
+let DF={seller:'',plat:'',src:'',period:'all',from:'',to:''}; // bộ lọc chung của Tổng quan
 const ROLE_LABEL={SD:'SD',QL:'Leader',PA:'Quản lý tài khoản',SELLER:'Seller',PENDING:'Chờ duyệt'};
 const rlabel=r=>ROLE_LABEL[r]||r;
 
@@ -486,6 +487,10 @@ async function renderModule(key){
   const {data,error}=await q;
   if(error){$('modBody').innerHTML=`<tr><td colspan="9" style="color:var(--red);padding:16px">Lỗi tải: ${esc(error.message)}</td></tr>`;return;}
   MOD_STATE[key]=data||[];
+  if(key==='expenses'&&$('modGroup')){
+    const gs=[...new Set([...catOpts('nhom_chi_phi'),...(data||[]).map(r=>r.group_name).filter(Boolean)])].sort();
+    $('modGroup').innerHTML='<option value="">Tất cả nhóm</option>'+gs.map(g=>`<option>${esc(g)}</option>`).join('');
+  }
   paintRows(key);
 }
 function colLabel(cfg,c){
@@ -726,7 +731,16 @@ $('impCommit').onclick=async()=>{
 
 /* ============ DASHBOARD ============ */
 async function renderDash(){
-  $('pageArea').innerHTML=`<div class="topbar"><div><h1>Tổng quan</h1><div class="sub">Tự tính từ data. ${new Date().toLocaleDateString('vi-VN')}</div></div></div>
+  $('pageArea').innerHTML=`<div class="topbar"><div><h1>Tổng quan</h1><div class="sub">Lọc áp cho mọi khối · TK theo ngày cấp/mua · case theo ngày phát sinh · chi phí theo ngày chi</div></div></div>
+    <div class="filters" style="margin-bottom:14px">
+      <select id="dSeller" onchange="DF.seller=this.value;renderDash()"><option value="">Tất cả seller</option>${catOpts('seller').map(s=>`<option ${DF.seller===s?'selected':''}>${esc(s)}</option>`).join('')}</select>
+      <select id="dPlat" onchange="DF.plat=this.value;renderDash()"><option value="">Tất cả sàn</option>${PLAT.map(s=>`<option ${DF.plat===s?'selected':''}>${s}</option>`).join('')}</select>
+      <select id="dSrc" onchange="DF.src=this.value;renderDash()"><option value="">Tất cả nguồn</option>${catOpts('nguon_tk').map(s=>`<option ${DF.src===s?'selected':''}>${esc(s)}</option>`).join('')}</select>
+      <select id="dPeriod" onchange="DF.period=this.value;renderDash()">${[['all','Kỳ: Tất cả'],['month','Kỳ: Tháng này'],['30','Kỳ: 30 ngày'],['quarter','Kỳ: Quý này'],['year','Kỳ: Năm nay']].map(([v,l])=>`<option value="${v}" ${DF.period===v?'selected':''}>${l}</option>`).join('')}</select>
+      <label class="muted" style="font-size:12px;display:flex;align-items:center;gap:6px">Từ <input type="date" value="${DF.from}" onchange="DF.from=this.value;renderDash()"></label>
+      <label class="muted" style="font-size:12px;display:flex;align-items:center;gap:6px">đến <input type="date" value="${DF.to}" onchange="DF.to=this.value;renderDash()"></label>
+      <button class="btn ghost sm" onclick="DF={seller:'',plat:'',src:'',period:'all',from:'',to:''};renderDash()">Xóa lọc</button>
+    </div>
     <div class="grid kpis" id="kpis"></div>
     <div class="grid" style="grid-template-columns:1.4fr 1fr;margin-top:14px">
       <div class="card"><h3>Phân bổ theo seller <span class="tag">tỷ lệ giữ TK</span></h3><div class="tbl-wrap"><table id="sellerTbl"></table></div></div>
@@ -754,20 +768,29 @@ async function renderDash(){
     sb.from('accounts').select('*'),sb.from('cases').select('*'),
     sb.from('account_requests').select('*'),sb.from('pipeline_batches').select('*'),
     sb.from('expenses').select('*')]);
-  const accs=accR.data||[],cases=caseR.data||[],reqs=reqR.data||[],pipes=pipeR.data||[],exps=expR.data||[];
+  const all=accR.data||[];
+  const tOK=d=>{if(DF.from||DF.to){if(!d)return false;if(DF.from&&d<DF.from)return false;if(DF.to&&d>DF.to)return false;return true;}if(DF.period==='all')return true;if(!d)return false;return expInPeriod({expense_date:d},DF.period);};
+  const filtering=!!(DF.seller||DF.plat||DF.src||DF.from||DF.to||DF.period!=='all');
+  const accs=all.filter(a=>(!DF.seller||a.seller===DF.seller)&&(!DF.plat||a.platform===DF.plat)&&(!DF.src||a.source===DF.src)&&tOK(a.assigned_date||a.purchase_date));
+  const cases=(caseR.data||[]).filter(c=>(!DF.seller||c.seller===DF.seller)&&(!DF.plat||c.platform===DF.plat)&&tOK(c.date_start));
+  const reqs=reqR.data||[];
+  const pipes=(pipeR.data||[]).filter(p=>(!DF.plat||p.platform===DF.plat)&&tOK(p.start_date));
+  const exps=(expR.data||[]).filter(e=>tOK(e.expense_date));
   const act=(p)=>accs.filter(a=>a.status==='Active'&&a.platform===p).length;
   const dead=accs.filter(a=>['Die','Suspend'].includes(a.status)).length;
-  // snapshot tuần: tự chốt khi người đầu tiên mở dashboard trong tuần mới
+  const actAll=(p)=>all.filter(a=>a.status==='Active'&&a.platform===p).length;
+  const deadAll=all.filter(a=>['Die','Suspend'].includes(a.status)).length;
+  // snapshot tuần: LUÔN chốt theo số không lọc
   const wk=mondayOf(new Date());let snaps=[];
   if(ME.role!=='SELLER'){
     snaps=(await sb.from('weekly_snapshots').select('*').order('week_start')).data||[];
     if(!snaps.find(s=>s.week_start===wk)){
-      const row={week_start:wk,tts_active:act('TTS'),amz_active:act('AMZ'),etsy_active:act('Etsy'),other_active:act('Khác'),die_total:dead};
+      const row={week_start:wk,tts_active:actAll('TTS'),amz_active:actAll('AMZ'),etsy_active:actAll('Etsy'),other_active:actAll('Khác'),die_total:deadAll};
       const {error}=await sb.from('weekly_snapshots').insert(row);if(!error)snaps.push(row);
     }
   }
   const prev=snaps.filter(s=>s.week_start<wk).pop();
-  const delta=(cur,pv,inverse)=>{if(!prev||pv==null)return '—';const d=cur-num(pv);if(!d)return '= tuần trước';const good=inverse?d<0:d>0;return `<span class="${good?'up':'down'}">${d>0?'↑':'↓'}${Math.abs(d)} so tuần trước</span>`;};
+  const delta=(cur,pv,inverse)=>{if(filtering||!prev||pv==null)return '—';const d=cur-num(pv);if(!d)return '= tuần trước';const good=inverse?d<0:d>0;return `<span class="${good?'up':'down'}">${d>0?'↑':'↓'}${Math.abs(d)} so tuần trước</span>`;};
   $('kpis').innerHTML=[
     ['TTS active',act('TTS'),delta(act('TTS'),prev?prev.tts_active:null)],
     ['AMZ active',act('AMZ'),delta(act('AMZ'),prev?prev.amz_active:null)],
