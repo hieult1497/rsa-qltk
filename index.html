@@ -210,7 +210,9 @@
 const SUPABASE_URL='https://oaeywvuibltnokdkbpvg.supabase.co';
 const SUPABASE_KEY='sb_publishable_UW_EwaozbQ_ZiI4-COHFKg_yPOTKT5A';
 const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
-let ME=null, CACHE={}, CATS={}, ACCOUNTS=[];
+let ME=null, CACHE={}, CATS={}, ACCOUNTS=[], PERMS={};
+const ROLE_LABEL={SD:'SD',QL:'Leader',PA:'Quản lý tài khoản',SELLER:'Seller',PENDING:'Chờ duyệt'};
+const rlabel=r=>ROLE_LABEL[r]||r;
 
 /* ============ TIỆN ÍCH ============ */
 const $=id=>document.getElementById(id);
@@ -262,9 +264,10 @@ async function boot(){
   if(prof.status!=='approved'||prof.role==='PENDING'){show('pending');return;}
   show('app');
   $('uName').textContent=prof.full_name||prof.email;
-  $('uRole').textContent=prof.role+(prof.seller_name?' · '+prof.seller_name:'');
+  $('uRole').textContent=rlabel(prof.role)+(prof.seller_name?' · '+prof.seller_name:'');
   $('uAv').textContent=(prof.full_name||prof.email||'?').slice(0,1).toUpperCase();
   await loadCats();
+  await loadMenuPerms();
   buildNav();
   go('dash');
 }
@@ -276,6 +279,17 @@ async function loadCats(){
   CATS={};(data||[]).forEach(c=>{(CATS[c.group_name]=CATS[c.group_name]||[]).push(c.value);});
 }
 function catOpts(g){return CATS[g]||[];}
+async function loadMenuPerms(){
+  const {data}=await sb.from('menu_permissions').select('*');
+  PERMS={};(data||[]).forEach(r=>PERMS[r.role+'|'+r.menu_key]=r.allowed);
+}
+function menuAllowed(n,role){
+  if(role==='SD')return true;
+  if(n.key==='perms'||n.key==='log')return false; // luôn chỉ SD
+  const k=role+'|'+n.key;
+  if(PERMS[k]!==undefined)return PERMS[k];
+  return n.roles.includes(role);
+}
 
 /* ============ ĐỊNH NGHĨA MODULE (engine config-driven) ============ */
 const PLAT=['TTS','AMZ','Etsy','Khác'];
@@ -416,7 +430,7 @@ const NAV=[
 function buildNav(){
   $('nav').innerHTML=NAV.map(n=>{
     if(n.sec)return `<div class="sec">${n.sec}</div>`;
-    if(!n.roles.includes(ME.role))return '';
+    if(!menuAllowed(n,ME.role))return '';
     return `<a data-go="${n.key}" onclick="go('${n.key}')"><span class="ic">${n.ic}</span>${n.label}${n.bell?`<span class="bell" id="${n.bell}"></span>`:''}</a>`;
   }).join('');
 }
@@ -825,18 +839,42 @@ async function renderAlerts(){
 async function markAllSeen(){for(const a of (window._alerts||[])){if(!SEEN.has(a.key)){SEEN.add(a.key);try{await sb.from('alert_seen').insert({alert_key:a.key.slice(0,300),user_id:ME.id});}catch(e){}}}renderAlerts();toast('Đã đánh dấu tất cả ✓');}
 
 /* ============ PHÂN QUYỀN ============ */
+const MATRIX_ROLES=[['QL','Leader'],['PA','Quản lý tài khoản'],['SELLER','Seller']];
 async function renderPerms(){
-  $('pageArea').innerHTML=`<div class="topbar"><div><h1>Phân quyền</h1><div class="sub">Duyệt đăng ký · gán vai trò · khóa</div></div></div>
-    <div class="card" style="margin-bottom:14px"><h3>Chờ phê duyệt</h3><div id="pendList" class="muted">Đang tải...</div></div>
+  const items=NAV.filter(n=>!n.sec&&n.key!=='perms'&&n.key!=='log');
+  $('pageArea').innerHTML=`<div class="topbar"><div><h1>Phân quyền</h1><div class="sub">Duyệt người dùng · gán & đổi vai trò · khóa · quyền xem menu</div></div></div>
+    <div class="card" style="margin-bottom:14px"><h3>Quyền xem menu <span class="tag">SD tick để mở/khóa menu cho từng vai trò rồi Lưu</span></h3>
+      <div class="tbl-wrap"><table><thead><tr><th>Menu</th><th style="text-align:center">SD</th>${MATRIX_ROLES.map(([c,l])=>`<th style="text-align:center">${l}</th>`).join('')}</tr></thead><tbody>
+      ${items.map(n=>`<tr><td>${n.label}</td><td style="text-align:center">✓</td>${MATRIX_ROLES.map(([c])=>{
+        const k=c+'|'+n.key;const on=PERMS[k]!==undefined?PERMS[k]:n.roles.includes(c);
+        return `<td style="text-align:center"><input type="checkbox" id="mp_${c}_${n.key}" ${on?'checked':''}></td>`;}).join('')}</tr>`).join('')}
+      <tr><td>Nhật ký</td><td style="text-align:center">✓</td>${MATRIX_ROLES.map(()=>'<td style="text-align:center" class="muted">—</td>').join('')}</tr>
+      <tr><td>Phân quyền</td><td style="text-align:center">✓</td>${MATRIX_ROLES.map(()=>'<td style="text-align:center" class="muted">—</td>').join('')}</tr>
+      </tbody></table></div>
+      <div style="margin-top:12px"><button class="btn" onclick="saveMenuPerms()">Lưu phân quyền</button></div>
+      <div class="muted" style="font-size:11.5px;margin-top:10px">Lưu ý: bảo mật dữ liệu (Seller chỉ thấy TK của mình, chỉ SD xóa/đổi vai trò, Leader không sửa data...) luôn được hệ thống enforce ở database, không phụ thuộc bảng này. Bảng này chỉ ẩn/hiện menu.</div>
+    </div>
+    <div class="card" style="margin-bottom:14px"><h3>Chờ phê duyệt <span class="tag">gán vai trò + (seller nếu là Seller) rồi Duyệt</span></h3><div id="pendList" class="muted">Đang tải...</div></div>
     <div class="card"><h3>Người dùng đã duyệt</h3><div id="apprList" class="muted">Đang tải...</div></div>`;
   const {data:profs}=await sb.from('profiles').select('*').order('created_at');
   const sellers=catOpts('seller');
-  const roleSel=p=>`<select id="role_${p.id}">${['SELLER','PA','QL','SD'].map(r=>`<option ${p.role===r?'selected':''}>${r}</option>`).join('')}</select>`;
+  const roleSel=p=>`<select id="role_${p.id}">${['SELLER','PA','QL','SD'].map(r=>`<option value="${r}" ${p.role===r?'selected':''}>${rlabel(r)}</option>`).join('')}</select>`;
   const sellerSel=p=>`<select id="seller_${p.id}"><option value="">— seller —</option>${sellers.map(s=>`<option ${p.seller_name===s?'selected':''}>${esc(s)}</option>`).join('')}</select>`;
   const pend=(profs||[]).filter(p=>p.status==='pending');
   $('pendList').innerHTML=pend.length?`<div class="tbl-wrap"><table><thead><tr><th>Họ tên</th><th>Email</th><th>Vai trò</th><th>Seller</th><th></th></tr></thead><tbody>${pend.map(p=>`<tr><td>${esc(p.full_name)}</td><td>${esc(p.email)}</td><td>${roleSel(p)}</td><td>${sellerSel(p)}</td><td><button class="btn sm" onclick="approveUser('${p.id}')">Duyệt</button></td></tr>`).join('')}</tbody></table></div>`:'Không có đăng ký chờ duyệt.';
   const appr=(profs||[]).filter(p=>p.status!=='pending');
   $('apprList').innerHTML=`<div class="tbl-wrap"><table><thead><tr><th>Họ tên</th><th>Email</th><th>Vai trò</th><th>Seller</th><th>Trạng thái</th><th></th></tr></thead><tbody>${appr.map(p=>`<tr><td>${esc(p.full_name)}</td><td>${esc(p.email)}</td><td>${roleSel(p)}</td><td>${sellerSel(p)}</td><td>${p.status==='approved'?'<span class="chip green">Hoạt động</span>':'<span class="chip red">Khóa</span>'}</td><td style="white-space:nowrap"><button class="btn ghost sm" onclick="saveUser('${p.id}')">Lưu</button> ${p.id===ME.id?'':(p.status==='approved'?`<button class="btn danger sm" onclick="lockUser('${p.id}',true)">Khóa</button>`:`<button class="btn sm" onclick="lockUser('${p.id}',false)">Mở</button>`)}</td></tr>`).join('')}</tbody></table></div>`;
+}
+async function saveMenuPerms(){
+  const items=NAV.filter(n=>!n.sec&&n.key!=='perms'&&n.key!=='log');
+  const rows=[];
+  for(const [c] of MATRIX_ROLES)for(const n of items){
+    const el=$('mp_'+c+'_'+n.key);if(el)rows.push({role:c,menu_key:n.key,allowed:el.checked});
+  }
+  const {error}=await sb.from('menu_permissions').upsert(rows,{onConflict:'role,menu_key'});
+  if(error)return toast('Lỗi: '+error.message);
+  await logAct('Lưu quyền menu','menu_permissions','',rows.length+' dòng');
+  await loadMenuPerms();buildNav();toast('Đã lưu phân quyền ✓');
 }
 async function approveUser(id){const role=$('role_'+id).value,seller=$('seller_'+id).value;if(role==='SELLER'&&!seller)return toast('Seller phải chọn tên seller');const {error}=await sb.from('profiles').update({role,seller_name:role==='SELLER'?seller:null,status:'approved'}).eq('id',id);if(error)return toast('Lỗi: '+error.message);await logAct('Duyệt user','profiles',id,role);toast('Đã duyệt ✓');renderPerms();}
 async function saveUser(id){const role=$('role_'+id).value,seller=$('seller_'+id).value;if(role==='SELLER'&&!seller)return toast('Seller phải chọn tên seller');const {error}=await sb.from('profiles').update({role,seller_name:role==='SELLER'?seller:null}).eq('id',id);if(error)return toast('Lỗi: '+error.message);await logAct('Sửa vai trò','profiles',id,role);toast('Đã lưu ✓');renderPerms();}
@@ -869,7 +907,7 @@ async function renderProfile(){
     <div class="card" style="max-width:440px">
       <div class="formgrid" style="padding:0;grid-template-columns:1fr">
         <div class="fld"><label>Email</label><div>${esc(ME.email)}</div></div>
-        <div class="fld"><label>Vai trò</label><div><span class="chip green">${ME.role}</span> ${ME.seller_name?'· '+esc(ME.seller_name):''}</div></div>
+        <div class="fld"><label>Vai trò</label><div><span class="chip green">${rlabel(ME.role)}</span> ${ME.seller_name?'· '+esc(ME.seller_name):''}</div></div>
         <div class="fld"><label>Tên hiển thị</label><input id="pfName" value="${esc(ME.full_name||'')}"></div>
       </div>
       <button class="btn" style="margin-top:14px" onclick="saveProfile()">Lưu hồ sơ</button>
