@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RSA QLTK — Quản lý tài khoản</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{
+  --bg:#f4f3ee; --card:#ffffff; --line:#e5e4dd; --text:#1a1a18; --muted:#6b6a64;
+  --green:#0f6e56; --green-bg:#e1f5ee; --blue:#0c447c; --blue-bg:#e6f1fb;
+  --red:#a32d2d; --red-bg:#fcebeb; --amber:#633806; --amber-bg:#faeeda;
+  --violet:#3c3489; --violet-bg:#eeedfe;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,'Noto Sans',sans-serif;background:var(--bg);color:var(--text);font-size:14px}
+button{cursor:pointer;font-family:inherit;font-size:13px}
+input,select,textarea{font-family:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;width:100%}
+input:focus,select:focus,textarea:focus{outline:2px solid #b9d7c9}
+.btn{padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:#fff}
+.btn-primary{background:var(--green);color:#fff;border-color:var(--green)}
+.btn-danger{background:var(--red);color:#fff;border-color:var(--red)}
+.btn-sm{padding:4px 10px;font-size:12px;border-radius:6px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px}
+.muted{color:var(--muted)} .small{font-size:12px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font-weight:500;color:var(--muted);text-align:left;padding:8px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:8px;border-bottom:1px solid #f0efe9;vertical-align:middle}
+.tag{display:inline-block;padding:2px 8px;border-radius:5px;font-size:11px;font-weight:500}
+.tag-green{background:var(--green-bg);color:#085041}.tag-red{background:var(--red-bg);color:#791f1f}
+.tag-blue{background:var(--blue-bg);color:#0c447c}.tag-amber{background:var(--amber-bg);color:#633806}
+.tag-violet{background:var(--violet-bg);color:#3c3489}.tag-gray{background:#f1efe8;color:#444441}
+/* ----- auth ----- */
+#authWrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.authBox{width:100%;max-width:380px}
+.logo{width:44px;height:44px;border-radius:12px;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:600;margin:0 auto 12px}
+.authBox .card{display:flex;flex-direction:column;gap:10px}
+.tabRow{display:flex;gap:6px;margin-bottom:4px}
+.tabRow button{flex:1;padding:8px;border-radius:8px;border:1px solid var(--line);background:#fff}
+.tabRow button.on{background:var(--green);color:#fff;border-color:var(--green)}
+/* ----- app shell ----- */
+#appWrap{display:none;min-height:100vh}
+.shell{display:flex;min-height:100vh}
+aside{width:215px;background:#fff;border-right:1px solid var(--line);padding:16px 10px;flex-shrink:0}
+aside .brand{display:flex;align-items:center;gap:8px;padding:0 8px 14px}
+aside .brand .logo{width:30px;height:30px;font-size:14px;margin:0;border-radius:8px}
+.navBtn{display:block;width:100%;text-align:left;padding:8px 10px;border:none;background:none;border-radius:8px;color:var(--text);margin-bottom:2px}
+.navBtn:hover{background:#f1efe8}
+.navBtn.on{background:var(--green-bg);color:#085041;font-weight:500}
+.navBtn .soon{font-size:10px;color:var(--muted)}
+main{flex:1;padding:22px;max-width:1200px;min-width:0}
+.pageTitle{font-size:20px;font-weight:600;margin-bottom:4px}
+.pageSub{color:var(--muted);font-size:13px;margin-bottom:18px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.kpiRow{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.kpi{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px}
+.kpi .num{font-size:26px;font-weight:600}
+.formGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.rowFlex{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#1a1a18;color:#fff;padding:10px 18px;border-radius:10px;font-size:13px;display:none;z-index:99}
+#menuToggle{display:none}
+@media(max-width:760px){
+  aside{position:fixed;left:-230px;top:0;bottom:0;z-index:50;transition:left .2s}
+  aside.open{left:0;box-shadow:0 0 30px rgba(0,0,0,.2)}
+  #menuToggle{display:inline-block;margin-bottom:12px}
+  .kpiRow{grid-template-columns:1fr 1fr}
+  .grid2{grid-template-columns:1fr}
+  .formGrid{grid-template-columns:1fr}
+  main{padding:14px}
+}
+</style>
+</head>
+<body>
+
+<!-- ========== MÀN ĐĂNG NHẬP / ĐĂNG KÝ ========== -->
+<div id="authWrap">
+  <div class="authBox">
+    <div class="logo">R</div>
+    <div style="text-align:center;margin-bottom:14px">
+      <div style="font-weight:600;font-size:17px">RSA QLTK</div>
+      <div class="muted small">Quản lý tài khoản seller · tài nguyên · chi phí</div>
+    </div>
+    <div class="card">
+      <div class="tabRow">
+        <button id="tabLogin" class="on" onclick="authTab('login')">Đăng nhập</button>
+        <button id="tabReg" onclick="authTab('reg')">Đăng ký</button>
+      </div>
+      <div id="regNameWrap" style="display:none">
+        <input id="regName" placeholder="Họ tên">
+      </div>
+      <input id="authEmail" type="email" placeholder="Email">
+      <input id="authPass" type="password" placeholder="Mật khẩu (tối thiểu 6 ký tự)">
+      <button class="btn btn-primary" id="authGo" onclick="authSubmit()">Đăng nhập</button>
+      <div id="authMsg" class="small" style="color:var(--red)"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== MÀN CHỜ DUYỆT ========== -->
+<div id="waitWrap" style="display:none;min-height:100vh;align-items:center;justify-content:center;padding:20px">
+  <div class="authBox">
+    <div class="logo">R</div>
+    <div class="card" style="text-align:center">
+      <div style="font-weight:600;font-size:16px">Tài khoản đang chờ duyệt</div>
+      <p class="muted small" style="margin:8px 0 14px">Đăng ký của bạn đã được ghi nhận. SD cần phê duyệt và gán vai trò trước khi bạn vào được. Vui lòng liên hệ Hiếu (SD).</p>
+      <button class="btn" onclick="doLogout()">Đăng xuất</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== APP ========== -->
+<div id="appWrap">
+<div class="shell">
+  <aside id="sidebar">
+    <div class="brand"><div class="logo">R</div><div><b>RSA QLTK</b><div class="small muted" id="meRole"></div></div></div>
+    <div id="navArea"></div>
+    <hr style="border:none;border-top:1px solid var(--line);margin:10px 0">
+    <button class="navBtn" onclick="doLogout()">⎋ Đăng xuất</button>
+  </aside>
+  <main>
+    <button id="menuToggle" class="btn btn-sm" onclick="document.getElementById('sidebar').classList.toggle('open')">☰ Menu</button>
+    <div id="pageArea"></div>
+  </main>
+</div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ================= CẤU HÌNH ================= */
+const SUPABASE_URL = 'https://oaeywvuibltnokdkbpvg.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_UW_EwaozbQ_ZiI4-COHFKg_yPOTKT5A';
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let ME = null; // profile của người đang đăng nhập
+
+/* ================= TIỆN ÍCH ================= */
+function $(id){return document.getElementById(id)}
+function esc(s){return (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function toast(msg){const t=$('toast');t.textContent=msg;t.style.display='block';setTimeout(()=>t.style.display='none',2600)}
+async function logAct(action, table, label, detail){
+  try{ await db.from('activity_log').insert({user_id:ME.id,user_name:ME.full_name||ME.email,action,target_table:table,target_label:label,detail:detail||''}); }catch(e){}
+}
+
+/* ================= AUTH ================= */
+let authMode='login';
+function authTab(m){
+  authMode=m;
+  $('tabLogin').classList.toggle('on',m==='login');
+  $('tabReg').classList.toggle('on',m==='reg');
+  $('regNameWrap').style.display = m==='reg'?'block':'none';
+  $('authGo').textContent = m==='reg'?'Gửi đăng ký':'Đăng nhập';
+  $('authMsg').textContent='';
+}
+async function authSubmit(){
+  const email=$('authEmail').value.trim(), pass=$('authPass').value;
+  $('authMsg').textContent='';
+  if(!email||!pass){$('authMsg').textContent='Điền đủ email và mật khẩu.';return}
+  if(authMode==='reg'){
+    const name=$('regName').value.trim();
+    if(!name){$('authMsg').textContent='Điền họ tên.';return}
+    const {error}=await db.auth.signUp({email,password:pass,options:{data:{full_name:name}}});
+    if(error){$('authMsg').textContent='Lỗi: '+error.message;return}
+    toast('Đăng ký thành công');
+  }else{
+    const {error}=await db.auth.signInWithPassword({email,password:pass});
+    if(error){$('authMsg').textContent='Sai email hoặc mật khẩu.';return}
+  }
+  boot();
+}
+async function doLogout(){await db.auth.signOut();location.reload()}
+
+/* ================= KHỞI ĐỘNG ================= */
+async function boot(){
+  const {data:{session}} = await db.auth.getSession();
+  if(!session){show('auth');return}
+  const {data:prof,error}=await db.from('profiles').select('*').eq('id',session.user.id).single();
+  if(error||!prof){show('auth');return}
+  ME=prof;
+  if(prof.status!=='approved'||prof.role==='PENDING'){show('wait');return}
+  if(prof.status==='locked'){show('wait');return}
+  show('app');
+  buildNav();
+  go('overview');
+}
+function show(which){
+  $('authWrap').style.display = which==='auth'?'flex':'none';
+  $('waitWrap').style.display = which==='wait'?'flex':'none';
+  $('appWrap').style.display  = which==='app'?'block':'none';
+}
+
+/* ================= MENU THEO VAI TRÒ ================= */
+const MENUS=[
+  {key:'overview', label:'Tổng quan',        roles:['SD','QL','PA','SELLER'], ready:true},
+  {key:'accounts', label:'Tài khoản',        roles:['SD','QL','PA','SELLER'], ready:false, phase:'P1'},
+  {key:'cases',    label:'Case kháng',       roles:['SD','QL','PA','SELLER'], ready:false, phase:'P2'},
+  {key:'requests', label:'Yêu cầu cấp TK',   roles:['SD','QL','PA','SELLER'], ready:false, phase:'P3'},
+  {key:'pipeline', label:'Pipeline TK mới',  roles:['SD','QL','PA'],          ready:false, phase:'P3'},
+  {key:'resources',label:'Tài nguyên',       roles:['SD','QL','PA'],          ready:false, phase:'P5'},
+  {key:'assets',   label:'Tài sản',          roles:['SD','QL','PA'],          ready:false, phase:'P6'},
+  {key:'finance',  label:'Chi phí',          roles:['SD','QL','PA'],          ready:false, phase:'P4'},
+  {key:'alerts',   label:'Cảnh báo',         roles:['SD','QL','PA'],          ready:false, phase:'P2'},
+  {key:'perms',    label:'Phân quyền',       roles:['SD'],                    ready:true},
+  {key:'cats',     label:'Danh mục',         roles:['SD','PA'],               ready:true},
+  {key:'log',      label:'Nhật ký',          roles:['SD'],                    ready:true},
+  {key:'profile',  label:'Hồ sơ',            roles:['SD','QL','PA','SELLER'], ready:true},
+];
+function buildNav(){
+  $('meRole').textContent = (ME.full_name||ME.email)+' · '+ME.role+(ME.seller_name?(' ('+ME.seller_name+')'):'');
+  $('navArea').innerHTML = MENUS.filter(m=>m.roles.includes(ME.role)).map(m=>
+    `<button class="navBtn" id="nav_${m.key}" onclick="go('${m.key}')">${m.label}${m.ready?'':` <span class="soon">· ${m.phase}</span>`}</button>`
+  ).join('');
+}
+function go(key){
+  document.querySelectorAll('.navBtn').forEach(b=>b.classList.remove('on'));
+  const nb=$('nav_'+key); if(nb)nb.classList.add('on');
+  document.getElementById('sidebar').classList.remove('open');
+  const m=MENUS.find(x=>x.key===key);
+  if(m&&!m.ready){renderSoon(m);return}
+  ({overview:renderOverview, perms:renderPerms, cats:renderCats, log:renderLog, profile:renderProfile}[key]||renderOverview)();
+}
+function renderSoon(m){
+  $('pageArea').innerHTML=`<div class="pageTitle">${m.label}</div>
+  <div class="pageSub">Module này mở ở phase ${m.phase} theo lộ trình.</div>
+  <div class="card muted">Đang xây. Thứ tự: P1 Tài khoản → P2 Case + Cảnh báo → P3 Yêu cầu + Pipeline → P4 Chi phí → P5 Tài nguyên → P6 Tài sản.</div>`;
+}
+
+/* ================= TỔNG QUAN (P0: khung + đếm cơ bản) ================= */
+async function renderOverview(){
+  $('pageArea').innerHTML=`<div class="pageTitle">Tổng quan</div>
+  <div class="pageSub">Dashboard đầy đủ mở ở P1 (KPI + bảng seller + nguồn TK). Bên dưới là số đếm cơ bản.</div>
+  <div class="kpiRow" id="kpiRow">
+    <div class="kpi"><div class="muted small">TTS active</div><div class="num">–</div></div>
+    <div class="kpi"><div class="muted small">AMZ active</div><div class="num">–</div></div>
+    <div class="kpi"><div class="muted small">Etsy active</div><div class="num">–</div></div>
+    <div class="kpi"><div class="muted small">Die / Suspend</div><div class="num">–</div></div>
+  </div>
+  <div class="card muted small">Chưa có dữ liệu tài khoản. Import Excel ở bước P1.</div>`;
+  const {data:accs}=await db.from('accounts').select('platform,status');
+  if(!accs||!accs.length)return;
+  const c=(p)=>accs.filter(a=>a.status==='Active'&&a.platform===p).length;
+  const dead=accs.filter(a=>['Die','Suspend'].includes(a.status)).length;
+  const nums=[c('TTS'),c('AMZ'),c('Etsy'),dead];
+  document.querySelectorAll('#kpiRow .num').forEach((el,i)=>el.textContent=nums[i]);
+}
+
+/* ================= PHÂN QUYỀN (SD) ================= */
+async function renderPerms(){
+  $('pageArea').innerHTML=`<div class="pageTitle">Phân quyền</div>
+  <div class="pageSub">Duyệt đăng ký · gán vai trò · khóa tài khoản</div>
+  <div class="card" style="margin-bottom:14px"><b>Chờ phê duyệt</b><div id="pendList" style="margin-top:10px" class="muted small">Đang tải...</div></div>
+  <div class="card"><b>Người dùng đã duyệt</b><div id="apprList" style="margin-top:10px" class="muted small">Đang tải...</div></div>`;
+  const {data:profs,error}=await db.from('profiles').select('*').order('created_at');
+  if(error){$('pendList').textContent='Lỗi tải: '+error.message;return}
+  const sellers=await getCats('seller');
+  const roleSel=(p)=>`<select id="role_${p.id}" style="width:110px">
+      ${['SELLER','PA','QL','SD'].map(r=>`<option ${p.role===r?'selected':''}>${r}</option>`).join('')}</select>`;
+  const sellerSel=(p)=>`<select id="seller_${p.id}" style="width:110px">
+      <option value="">— seller —</option>${sellers.map(s=>`<option ${p.seller_name===s?'selected':''}>${esc(s)}</option>`).join('')}</select>`;
+
+  const pend=profs.filter(p=>p.status==='pending');
+  $('pendList').innerHTML = pend.length? `<table><tr><th>Họ tên</th><th>Email</th><th>Vai trò</th><th>Seller (nếu là Seller)</th><th></th></tr>`+
+    pend.map(p=>`<tr><td>${esc(p.full_name)}</td><td>${esc(p.email)}</td>
+      <td>${roleSel(p)}</td><td>${sellerSel(p)}</td>
+      <td><button class="btn btn-sm btn-primary" onclick="approveUser('${p.id}')">Duyệt</button></td></tr>`).join('')+`</table>`
+    : 'Không có đăng ký nào chờ duyệt.';
+
+  const appr=profs.filter(p=>p.status!=='pending');
+  $('apprList').innerHTML = appr.length? `<table><tr><th>Họ tên</th><th>Email</th><th>Vai trò</th><th>Seller</th><th>Trạng thái</th><th></th></tr>`+
+    appr.map(p=>`<tr><td>${esc(p.full_name)}</td><td>${esc(p.email)}</td>
+      <td>${roleSel(p)}</td><td>${sellerSel(p)}</td>
+      <td>${p.status==='approved'?'<span class="tag tag-green">Hoạt động</span>':'<span class="tag tag-red">Đã khóa</span>'}</td>
+      <td class="rowFlex">
+        <button class="btn btn-sm" onclick="saveUser('${p.id}')">Lưu</button>
+        ${p.id===ME.id?'':(p.status==='approved'
+          ?`<button class="btn btn-sm btn-danger" onclick="lockUser('${p.id}',true)">Khóa</button>`
+          :`<button class="btn btn-sm" onclick="lockUser('${p.id}',false)">Mở khóa</button>`)}
+      </td></tr>`).join('')+`</table>`
+    : 'Chưa có người dùng nào.';
+}
+async function approveUser(id){
+  const role=$('role_'+id).value, seller=$('seller_'+id).value;
+  if(role==='SELLER'&&!seller){toast('Vai trò Seller phải chọn tên seller');return}
+  const {error}=await db.from('profiles').update({role,seller_name:role==='SELLER'?seller:null,status:'approved'}).eq('id',id);
+  if(error){toast('Lỗi: '+error.message);return}
+  await logAct('approve','profiles',id,'Duyệt user, vai trò '+role);
+  toast('Đã duyệt'); renderPerms();
+}
+async function saveUser(id){
+  const role=$('role_'+id).value, seller=$('seller_'+id).value;
+  if(role==='SELLER'&&!seller){toast('Vai trò Seller phải chọn tên seller');return}
+  const {error}=await db.from('profiles').update({role,seller_name:role==='SELLER'?seller:null}).eq('id',id);
+  if(error){toast('Lỗi: '+error.message);return}
+  await logAct('update','profiles',id,'Đổi vai trò → '+role);
+  toast('Đã lưu'); renderPerms();
+}
+async function lockUser(id,lock){
+  const {error}=await db.from('profiles').update({status:lock?'locked':'approved'}).eq('id',id);
+  if(error){toast('Lỗi: '+error.message);return}
+  await logAct(lock?'lock':'unlock','profiles',id,'');
+  toast(lock?'Đã khóa':'Đã mở khóa'); renderPerms();
+}
+
+/* ================= DANH MỤC ================= */
+const CAT_GROUPS=[
+  ['seller','Seller'],['nguon_tk','Nguồn TK'],['nhom_chi_phi','Nhóm chi phí'],
+  ['loai_loi','Loại lỗi'],['noi_mua','Nơi mua'],['loai_tool','Loại tool']
+];
+let catGroup='seller';
+async function getCats(group){
+  const {data}=await db.from('categories').select('value').eq('group_name',group).eq('active',true).order('sort');
+  return (data||[]).map(x=>x.value);
+}
+async function renderCats(){
+  $('pageArea').innerHTML=`<div class="pageTitle">Danh mục</div>
+  <div class="pageSub">Giá trị dropdown dùng toàn hệ thống — sửa ở đây, không sửa code. Người nghỉ việc thì Tắt, đừng xóa (giữ lịch sử).</div>
+  <div class="rowFlex" style="margin-bottom:12px">${CAT_GROUPS.map(([k,l])=>
+    `<button class="btn btn-sm ${k===catGroup?'btn-primary':''}" onclick="catGroup='${k}';renderCats()">${l}</button>`).join('')}</div>
+  <div class="card">
+    <div class="rowFlex" style="margin-bottom:10px">
+      <input id="newCat" placeholder="Thêm giá trị mới..." style="max-width:240px">
+      <button class="btn btn-primary btn-sm" onclick="addCat()">+ Thêm</button>
+    </div>
+    <div id="catList" class="muted small">Đang tải...</div>
+  </div>`;
+  const {data,error}=await db.from('categories').select('*').eq('group_name',catGroup).order('sort').order('value');
+  if(error){$('catList').textContent='Lỗi: '+error.message;return}
+  $('catList').innerHTML = (data&&data.length)? `<table><tr><th>Giá trị</th><th>Trạng thái</th><th></th></tr>`+
+    data.map(c=>`<tr><td>${esc(c.value)}</td>
+      <td>${c.active?'<span class="tag tag-green">Đang dùng</span>':'<span class="tag tag-gray">Đã tắt</span>'}</td>
+      <td class="rowFlex">
+        <button class="btn btn-sm" onclick="toggleCat(${c.id},${!c.active})">${c.active?'Tắt':'Bật'}</button>
+        ${ME.role==='SD'?`<button class="btn btn-sm btn-danger" onclick="delCat(${c.id},'${esc(c.value)}')">Xóa</button>`:''}
+      </td></tr>`).join('')+`</table>` : 'Chưa có giá trị nào.';
+}
+async function addCat(){
+  const v=$('newCat').value.trim(); if(!v)return;
+  const {error}=await db.from('categories').insert({group_name:catGroup,value:v});
+  if(error){toast(error.code==='23505'?'Giá trị đã tồn tại':'Lỗi: '+error.message);return}
+  await logAct('create','categories',catGroup+': '+v,'');
+  renderCats();
+}
+async function toggleCat(id,active){
+  await db.from('categories').update({active}).eq('id',id);
+  await logAct('update','categories','#'+id,active?'Bật':'Tắt');
+  renderCats();
+}
+async function delCat(id,v){
+  if(!confirm('Xóa "'+v+'"? Nên Tắt thay vì xóa nếu đã dùng trong dữ liệu.'))return;
+  await db.from('categories').delete().eq('id',id);
+  await logAct('delete','categories',v,'');
+  renderCats();
+}
+
+/* ================= NHẬT KÝ (SD) ================= */
+async function renderLog(){
+  $('pageArea').innerHTML=`<div class="pageTitle">Nhật ký hoạt động</div>
+  <div class="pageSub">Ai làm gì trong tool · 200 dòng gần nhất · chỉ SD xem</div>
+  <div class="card"><div id="logList" class="muted small">Đang tải...</div></div>`;
+  const {data,error}=await db.from('activity_log').select('*').order('created_at',{ascending:false}).limit(200);
+  if(error){$('logList').textContent='Lỗi: '+error.message;return}
+  $('logList').innerHTML=(data&&data.length)?`<table><tr><th>Thời gian</th><th>Người làm</th><th>Hành động</th><th>Đối tượng</th><th>Chi tiết</th></tr>`+
+    data.map(l=>`<tr><td class="small muted">${new Date(l.created_at).toLocaleString('vi-VN')}</td>
+      <td>${esc(l.user_name)}</td><td><span class="tag tag-blue">${esc(l.action)}</span></td>
+      <td>${esc(l.target_table||'')} ${esc(l.target_label||'')}</td><td class="small">${esc(l.detail||'')}</td></tr>`).join('')+`</table>`
+    :'Chưa có hoạt động nào được ghi.';
+}
+
+/* ================= HỒ SƠ ================= */
+async function renderProfile(){
+  $('pageArea').innerHTML=`<div class="pageTitle">Hồ sơ</div>
+  <div class="pageSub">Tài khoản của bạn</div>
+  <div class="card" style="max-width:420px;display:flex;flex-direction:column;gap:10px">
+    <div><span class="muted small">Email</span><div>${esc(ME.email)}</div></div>
+    <div><span class="muted small">Vai trò</span><div><span class="tag tag-green">${ME.role}</span> ${ME.seller_name?('· seller: '+esc(ME.seller_name)):''}</div></div>
+    <div><span class="muted small">Tên hiển thị</span><input id="pfName" value="${esc(ME.full_name||'')}"></div>
+    <button class="btn btn-primary" onclick="saveProfile()">Lưu hồ sơ</button>
+  </div>`;
+}
+async function saveProfile(){
+  const {error}=await db.from('profiles').update({full_name:$('pfName').value.trim()}).eq('id',ME.id);
+  if(error){toast('Lỗi: '+error.message);return}
+  ME.full_name=$('pfName').value.trim(); buildNav(); toast('Đã lưu');
+}
+
+/* go */
+boot();
+$('authPass').addEventListener('keydown',e=>{if(e.key==='Enter')authSubmit()});
+</script>
+</body>
+</html>
