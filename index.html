@@ -206,6 +206,7 @@ function num(v){const n=Number(v);return isNaN(n)?0:n;}
 function fmtVnd(v){return num(v).toLocaleString('vi-VN');}
 function fmtUsd(v){return num(v).toLocaleString('en-US',{maximumFractionDigits:2});}
 function daysBetween(a,b){if(!a)return null;return Math.floor((new Date(b||todayStr())-new Date(a))/86400000);}
+function mondayOf(d){const x=new Date(d);const day=(x.getDay()+6)%7;x.setDate(x.getDate()-day);return x.toISOString().slice(0,10);}
 function parseDateAny(v){if(!v)return null;if(v instanceof Date&&!isNaN(v))return v.toISOString().slice(0,10);
   const s=String(v).trim();if(/^\d{4}-\d{2}-\d{2}/.test(s))return s.slice(0,10);
   const m=s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);if(m)return m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');
@@ -220,7 +221,7 @@ function lmsg(t,cls){$('loginMsg').textContent=t;$('loginMsg').className='msg '+
 $('btnIn').onclick=async()=>{const {error}=await sb.auth.signInWithPassword({email:$('inEmail').value.trim(),password:$('inPass').value});if(error)return lmsg('Sai email hoặc mật khẩu.','err');boot();};
 $('btnUp').onclick=async()=>{const name=$('upName').value.trim();if(!name)return lmsg('Điền họ tên.','err');
   const {error}=await sb.auth.signUp({email:$('upEmail').value.trim(),password:$('upPass').value,options:{data:{full_name:name}}});
-  if(error)return lmsg('Lỗi: '+error.message,'err');lmsg('Đăng ký xong! Chờ SD duyệt. Bạn có thể đăng nhập sau khi được duyệt.','okk');};
+  if(error)return lmsg('Lỗi: '+error.message,'err');boot();};
 $('inPass').addEventListener('keydown',e=>{if(e.key==='Enter')$('btnIn').click();});
 $('btnOut').onclick=$('btnPendOut').onclick=async()=>{await sb.auth.signOut();location.reload();};
 $('btnTheme').onclick=()=>{const b=document.body;const dark=b.classList.contains('t-dark');b.classList.toggle('t-dark',!dark);b.classList.toggle('t-light',dark);localStorage.setItem('rsa_theme',dark?'t-light':'t-dark');if(window._chart)renderDash();};
@@ -256,7 +257,7 @@ const PLAT=['TTS','AMZ','Etsy','Khác'];
 const ACC_STATUS=['Mới','Active','Suspend','Die','Thu hồi'];
 const MODULES={
   accounts:{table:'accounts',title:'Tài khoản',sub:'Bảng lõi · mỗi dòng = 1 TK. 7 trường bắt buộc, còn lại điền dần.',
-    sellerScope:'seller', key:['email','platform'],
+    sellerScope:'seller', key:['email','platform'], userCol:'created_by',
     fields:[
       {k:'name',l:'Tên TK / Shop',t:'text',req:1},
       {k:'platform',l:'Sàn',t:'sel',opts:PLAT,req:1},
@@ -286,7 +287,7 @@ const MODULES={
     cols:['name','platform','seller','status','source','warranty_end','balance_usd','onhold_usd','note'],
     badges:{status:{Active:'green',Die:'red',Suspend:'amber','Thu hồi':'mut','Mới':'blue'}}},
   cases:{table:'cases',title:'Case kháng',sub:'Mỗi dòng = 1 case · link đến TK · SLA tự tính từ ngày ghi case.',
-    sellerScope:'seller', key:['account_id','date_start','error_type'],
+    sellerScope:'seller', key:['account_id','date_start','error_type'], userCol:'created_by',
     fields:[
       {k:'account_id',l:'TK liên quan',t:'acc',req:1},
       {k:'error_type',l:'Loại lỗi',t:'text',req:1},
@@ -300,17 +301,17 @@ const MODULES={
     cols:['account_label','platform','seller','error_type','date_start','sla','status'],
     badges:{status:{'Thành công':'green','Thất bại':'red','Dừng':'mut','Pending':'amber','Đang xử lý':'blue','Chờ support':'purple'}}},
   requests:{table:'account_requests',title:'Yêu cầu cấp TK',sub:'Seller tạo → Lý/Giang duyệt → PA cấp.',
-    sellerScope:'seller', key:['seller','account_type','request_date'],
+    sellerScope:'seller', key:['seller','account_type','request_date'], userCol:'requested_by',
     fields:[
       {k:'seller',l:'Seller',t:'cat',cat:'seller',req:1},
       {k:'account_type',l:'Loại TK cần',t:'sel',opts:['TTS','AMZ','Etsy','Kênh trắng','Gmail','Khác'],req:1},
       {k:'reason',l:'Lý do',t:'text',req:1},
       {k:'request_date',l:'Ngày yêu cầu',t:'date',req:1},
-      {k:'approval_status',l:'Trạng thái duyệt',t:'sel',opts:['Chờ duyệt','Đã duyệt','Từ chối'],req:1,approveOnly:1},
-      {k:'reject_reason',l:'Lý do từ chối',t:'text'},
-      {k:'issue_status',l:'Đã cấp chưa',t:'sel',opts:['Chưa','Đã cấp','Không có nguồn']},
-      {k:'issued_account_id',l:'TK đã cấp',t:'acc'},
-      {k:'issued_date',l:'Ngày cấp',t:'date'},
+      {k:'approval_status',l:'Trạng thái duyệt',t:'sel',opts:['Chờ duyệt','Đã duyệt','Từ chối'],roles:['SD']},
+      {k:'reject_reason',l:'Lý do từ chối',t:'text',roles:['SD']},
+      {k:'issue_status',l:'Đã cấp chưa',t:'sel',opts:['Chưa','Đã cấp','Không có nguồn'],roles:['SD','PA']},
+      {k:'issued_account_id',l:'TK đã cấp',t:'acc',roles:['SD','PA']},
+      {k:'issued_date',l:'Ngày cấp',t:'date',roles:['SD','PA']},
       {k:'note',l:'Ghi chú',t:'textarea',full:1},
     ],
     cols:['seller','account_type','reason','request_date','wait','approval_status','issue_status'],
@@ -351,7 +352,7 @@ const MODULES={
   devices:{table:'devices',title:'Thiết bị',sub:'Dcom / Phone / Khác.',key:['device_code'],
     fields:[{k:'device_type',l:'Loại',t:'sel',opts:['Dcom','Phone','Khác'],req:1},{k:'device_code',l:'Mã thiết bị',t:'text'},{k:'account_ref',l:'Gắn TK',t:'text'},{k:'network_label',l:'Nhãn mạng',t:'text'},{k:'sim_network',l:'Mạng sim',t:'text'},{k:'sim_owner',l:'Chủ sim',t:'text'},{k:'phone_number',l:'SĐT',t:'text'},{k:'data_expiry',l:'Hạn data',t:'date'},{k:'status',l:'Trạng thái',t:'text'},{k:'purpose',l:'Mục đích',t:'text'},{k:'receiver',l:'Người nhận',t:'text'},{k:'storage_place',l:'Nơi lưu',t:'text'},{k:'note',l:'Ghi chú',t:'textarea',full:1}],
     cols:['device_type','device_code','account_ref','sim_owner','data_expiry','status']},
-  expenses:{table:'expenses',title:'Chi phí',sub:'Sổ chi · gộp 6 sheet Excel theo cột Nhóm.',key:['expense_date','content','amount_vnd'],
+  expenses:{table:'expenses',title:'Chi phí',sub:'Sổ chi · gộp 6 sheet Excel theo cột Nhóm.',key:null,userCol:'created_by',
     fields:[{k:'expense_date',l:'Ngày',t:'date',req:1},{k:'group_name',l:'Nhóm',t:'cat',cat:'nhom_chi_phi',req:1},{k:'content',l:'Nội dung',t:'text',req:1},{k:'amount_vnd',l:'Số tiền (₫)',t:'num',req:1},{k:'receiver',l:'Nơi nhận',t:'text'},{k:'requester',l:'Người request',t:'text'},{k:'platform',l:'Nền tảng',t:'sel',opts:PLAT},{k:'note',l:'Ghi chú',t:'textarea',full:1}],
     cols:['expense_date','group_name','content','amount_vnd','receiver','platform'],
     money:'amount_vnd'},
@@ -418,21 +419,24 @@ let MOD_STATE={};
 async function renderModule(key){
   const cfg=MODULES[key];
   await loadAccounts();
+  if(key==='accounts'){const {data:oc}=await sb.from('cases').select('account_id,status');window.OPEN_KH=new Set((oc||[]).filter(c=>['Pending','Đang xử lý','Chờ support'].includes(c.status)).map(c=>c.account_id));}
   const canEdit=['SD','PA'].includes(ME.role);
+  const canAdd=canEdit||(key==='requests'&&ME.role==='SELLER'&&ME.seller_name);
+  const showAct=canEdit||key==='requests';
   $('pageArea').innerHTML=`
     <div class="topbar"><div><h1>${cfg.title}</h1><div class="sub">${cfg.sub}</div></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn ghost sm" onclick="tplXlsx('${key}')">⤓ Form mẫu</button>
         ${canEdit?`<button class="btn ghost sm" onclick="$('impFile').click()">⤴ Nhập Excel</button>`:''}
         <button class="btn ghost sm" onclick="exportXlsx('${key}')">⇩ Xuất Excel</button>
-        ${canEdit?`<button class="btn sm" onclick="openForm('${key}')">+ Thêm</button>`:''}
+        ${canAdd?`<button class="btn sm" onclick="openForm('${key}')">+ Thêm</button>`:''}
         <input type="file" id="impFile" accept=".xlsx,.xls,.csv" style="display:none" onchange="importXlsx('${key}',this.files[0]);this.value=''">
       </div></div>
     <div class="filters"><input class="search" id="modSearch" placeholder="Tìm..." oninput="paintRows('${key}')">
       ${cfg.sellerScope&&['SD','QL','PA'].includes(ME.role)?`<select id="modSeller" onchange="paintRows('${key}')"><option value="">Tất cả seller</option>${catOpts('seller').map(s=>`<option>${esc(s)}</option>`).join('')}</select>`:''}
       <span class="cnt" id="modCount"></span></div>
     <div class="card" style="padding:0"><div class="tbl-wrap"><table>
-      <thead><tr>${cfg.cols.map(c=>`<th>${colLabel(cfg,c)}</th>`).join('')}${canEdit?'<th></th>':''}</tr></thead>
+      <thead><tr>${cfg.cols.map(c=>`<th>${colLabel(cfg,c)}</th>`).join('')}${showAct?'<th></th>':''}</tr></thead>
       <tbody id="modBody"></tbody></table>
       <div class="empty" id="modEmpty" style="display:none">Chưa có dữ liệu. ${canEdit?'Bấm "+ Thêm" hoặc Nhập Excel.':''}</div>
     </div></div>`;
@@ -454,11 +458,21 @@ function paintRows(key){
   if(ME.role==='SELLER'&&cfg.sellerScope)rows=rows.filter(r=>r.seller===ME.seller_name);
   const sf=$('modSeller')?.value;if(sf)rows=rows.filter(r=>r.seller===sf);
   const canEdit=['SD','PA'].includes(ME.role);
+  const showAct=canEdit||key==='requests';
   $('modCount').textContent=rows.length+' dòng';
   $('modEmpty').style.display=rows.length?'none':'block';
-  $('modBody').innerHTML=rows.map(r=>`<tr>${cfg.cols.map(c=>`<td>${cellVal(cfg,r,c)}</td>`).join('')}${canEdit?`<td style="text-align:right;white-space:nowrap">
-    <button class="btn ghost sm" onclick="openForm('${key}',${r.id})">Sửa</button>
-    ${ME.role==='SD'?`<button class="btn danger sm" onclick="delRow('${key}',${r.id})">Xóa</button>`:''}</td>`:''}</tr>`).join('');
+  $('modBody').innerHTML=rows.map(r=>`<tr>${cfg.cols.map(c=>`<td>${cellVal(cfg,r,c)}</td>`).join('')}${showAct?`<td style="text-align:right;white-space:nowrap">${rowActs(key,r,canEdit)}</td>`:''}</tr>`).join('');
+}
+function rowActs(key,r,canEdit){
+  let h='';
+  if(key==='requests'){
+    if(r.approval_status==='Chờ duyệt'&&['QL','SD'].includes(ME.role))h+=`<button class="btn sm" onclick="reqApprove(${r.id},true)">✓ Duyệt</button> <button class="btn danger sm" onclick="reqApprove(${r.id},false)">✕ Từ chối</button> `;
+    if(r.approval_status==='Đã duyệt'&&r.issue_status==='Chưa'&&canEdit)h+=`<button class="btn sm" onclick="openIssue(${r.id})">Cấp TK</button> `;
+  }
+  if(key==='accounts'&&canEdit)h+=`<button class="btn sm" onclick="openQuickTT(${r.id})">Đổi TT</button> `;
+  if(canEdit)h+=`<button class="btn ghost sm" onclick="openForm('${key}',${r.id})">Sửa</button> `;
+  if(ME.role==='SD')h+=`<button class="btn danger sm" onclick="delRow('${key}',${r.id})">Xóa</button>`;
+  return h;
 }
 function badge(cfg,field,val){const b=cfg.badges&&cfg.badges[field]&&cfg.badges[field][val];return `<span class="chip ${b||'mut'}">${esc(val||'—')}</span>`;}
 function cellVal(cfg,r,c){
@@ -470,21 +484,24 @@ function cellVal(cfg,r,c){
   if(c==='stageBar'){return badge(cfg,'stage',r.stage);}
   const f=cfg.fields.find(x=>x.k===c);
   let v=r[c];
-  if(cfg.badges&&cfg.badges[c])return badge(cfg,c,v);
+  if(cfg.badges&&cfg.badges[c]){let h=badge(cfg,c,v);if(c==='status'&&cfg.table==='accounts'&&window.OPEN_KH&&window.OPEN_KH.has(r.id))h+=' <span class="chip purple">⚖ kháng</span>';return h;}
   if(f&&f.t==='num'){if(c.endsWith('_vnd'))return `<span class="num">${fmtVnd(v)}</span>`;if(c.endsWith('_usd'))return `<span class="num">${fmtUsd(v)}</span>`;return v??'';}
   if(f&&f.sensitive&&ME.role==='SELLER')return '<span class="chip mut">ẩn</span>';
   return esc(v==null?'':String(v).slice(0,40));
 }
 
 /* ============ FORM thêm/sửa ============ */
-let FORM_CFG=null, FORM_ID=null;
+let FORM_CFG=null, FORM_ID=null, FORM_MODE=null;
 function openForm(key,id){
-  const cfg=MODULES[key];FORM_CFG=key;FORM_ID=id||null;
+  const cfg=MODULES[key];FORM_CFG=key;FORM_ID=id||null;FORM_MODE=null;
   const row=id?(MOD_STATE[key]||[]).find(r=>r.id===id):{};
   $('modalTitle').textContent=(id?'Sửa ':'Thêm ')+cfg.title;
   $('modalErr').textContent='';
   $('modalBody').innerHTML=cfg.fields.map(f=>{
     if(f.sensitive&&ME.role==='SELLER')return '';
+    if(f.roles&&!f.roles.includes(ME.role))return '';
+    if(f.k==='seller'&&cfg.table==='account_requests'&&ME.role==='SELLER')
+      return `<div class="fld"><label>${esc(f.l)}</label><input id="ff_seller" value="${esc(ME.seller_name||'')}" disabled></div>`;
     let inp='';const v=row[f.k]??'';
     if(f.t==='sel'||f.t==='cat'){
       const opts=f.t==='cat'?catOpts(f.cat):f.opts;
@@ -502,9 +519,25 @@ function openForm(key,id){
 }
 function closeModal(){$('modal').classList.remove('show');}
 $('modalSave').onclick=async()=>{
+  if(FORM_MODE==='tt'){
+    const status=$('ff_status').value,error_type=$('ff_error_type').value||null;
+    if(!status){$('modalErr').textContent='Chọn trạng thái';return;}
+    const {error}=await sb.from('accounts').update({status,error_type}).eq('id',FORM_ID);
+    if(error){$('modalErr').textContent='Lỗi: '+error.message;return;}
+    await logAct('Đổi trạng thái','accounts',FORM_ID,'→ '+status);
+    toast('Đã đổi trạng thái ✓');closeModal();FORM_MODE=null;renderModule('accounts');return;
+  }
+  if(FORM_MODE==='issue'){
+    const patch={issue_status:$('ff_issue').value,issued_account_id:$('ff_issue_acc').value?Number($('ff_issue_acc').value):null,issued_date:$('ff_issue_date').value||null};
+    const {error}=await sb.from('account_requests').update(patch).eq('id',FORM_ID);
+    if(error){$('modalErr').textContent='Lỗi: '+error.message;return;}
+    await logAct('Cấp TK','account_requests',FORM_ID,patch.issue_status);
+    toast('Đã ghi nhận cấp TK ✓');closeModal();FORM_MODE=null;renderModule('requests');return;
+  }
   const cfg=MODULES[FORM_CFG];const out={};
   for(const f of cfg.fields){
     if(f.sensitive&&ME.role==='SELLER')continue;
+    if(f.roles&&!f.roles.includes(ME.role))continue;
     const el=$('ff_'+f.k);if(!el)continue;let v=el.value;
     if(f.req&&!String(v).trim()){$('modalErr').textContent='Thiếu: '+f.l;return;}
     if(v==='')v=null;
@@ -512,11 +545,19 @@ $('modalSave').onclick=async()=>{
     else if(f.t==='acc')v=v?Number(v):null;
     out[f.k]=v;
   }
+  if(cfg.table==='account_requests'&&ME.role==='SELLER')out.seller=ME.seller_name;
   $('modalSave').disabled=true;
   try{
     if(FORM_ID){const {error}=await sb.from(cfg.table).update(out).eq('id',FORM_ID);if(error)throw error;await logAct('Sửa',cfg.table,out.name||out.batch_name||out.gmail||FORM_ID,'');}
-    else{out.created_by=ME.id;const {error}=await sb.from(cfg.table).insert(out);if(error)throw error;await logAct('Thêm',cfg.table,out.name||out.batch_name||out.gmail||out.content||'','');}
-    toast('Đã lưu ✓');closeModal();renderModule(FORM_CFG);
+    else{
+      Object.keys(out).forEach(k=>{if(out[k]==null)delete out[k];});
+      if(cfg.userCol)out[cfg.userCol]=ME.id;
+      const {error}=await sb.from(cfg.table).insert(out);if(error)throw error;
+      await logAct('Thêm',cfg.table,out.name||out.batch_name||out.gmail||out.content||'','');
+    }
+    let hint='';
+    if(cfg.table==='cases'){if(out.status==='Thành công')hint=' — Gợi ý: đổi TK về Active';else if(['Thất bại','Dừng'].includes(out.status))hint=' — Gợi ý: đổi TK sang Die';}
+    toast('Đã lưu ✓'+hint);closeModal();renderModule(FORM_CFG);
   }catch(e){$('modalErr').textContent=e.code==='23505'?'Trùng dữ liệu (khóa duy nhất đã tồn tại).':('Lỗi: '+e.message);}
   $('modalSave').disabled=false;
 };
@@ -525,6 +566,34 @@ async function delRow(key,id){
   const {error}=await sb.from(cfg.table).delete().eq('id',id);
   if(error)return toast('Lỗi: '+error.message);
   await logAct('Xóa',cfg.table,id,'');toast('Đã xóa ✓');renderModule(key);
+}
+function openQuickTT(id){
+  const r=(MOD_STATE['accounts']||[]).find(x=>x.id===id);if(!r)return;
+  FORM_CFG='accounts';FORM_ID=id;FORM_MODE='tt';
+  $('modalTitle').textContent='Đổi trạng thái — '+r.name;
+  $('modalErr').textContent='';
+  $('modalBody').innerHTML=`
+    <div class="fld"><label>Trạng thái mới <span class="req">*</span></label><select id="ff_status">${ACC_STATUS.map(s=>`<option ${r.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
+    <div class="fld"><label>Lỗi (nếu Suspend/Die)</label><input id="ff_error_type" value="${esc(r.error_type||'')}"></div>`;
+  $('modal').classList.add('show');
+}
+async function reqApprove(id,ok){
+  let patch={approval_status:ok?'Đã duyệt':'Từ chối',approved_by_name:ME.full_name||ME.email,approved_at:new Date().toISOString()};
+  if(!ok){patch.reject_reason=prompt('Lý do từ chối:')||'';}
+  const {error}=await sb.from('account_requests').update(patch).eq('id',id);
+  if(error)return toast('Lỗi: '+error.message);
+  await logAct(ok?'Duyệt cấp TK':'Từ chối cấp TK','account_requests',id,'');
+  toast(ok?'Đã duyệt ✓':'Đã từ chối');renderModule('requests');
+}
+function openIssue(id){
+  FORM_CFG='requests';FORM_ID=id;FORM_MODE='issue';
+  $('modalTitle').textContent='Cấp TK cho yêu cầu #'+id;
+  $('modalErr').textContent='';
+  $('modalBody').innerHTML=`
+    <div class="fld"><label>Kết quả <span class="req">*</span></label><select id="ff_issue"><option>Đã cấp</option><option>Không có nguồn</option></select></div>
+    <div class="fld"><label>TK cấp (nếu có)</label><select id="ff_issue_acc"><option value="">—</option>${ACCOUNTS.map(a=>`<option value="${a.id}">${esc(a.name)} (${a.platform})</option>`).join('')}</select></div>
+    <div class="fld"><label>Ngày cấp</label><input id="ff_issue_date" type="date" value="${todayStr()}"></div>`;
+  $('modal').classList.add('show');
 }
 
 /* ============ EXCEL: template / export / import ============ */
@@ -540,7 +609,7 @@ function tplXlsx(key){
 function exportXlsx(key){
   const cfg=MODULES[key];let rows=(MOD_STATE[key]||[]);
   if(ME.role==='SELLER'&&cfg.sellerScope)rows=rows.filter(r=>r.seller===ME.seller_name);
-  const out=rows.map(r=>{const o={};cfg.fields.forEach(f=>{if(f.sensitive&&ME.role!=='SD')return;let v=r[f.k];if(f.t==='acc')v=v?accLabel(v):'';o[f.l]=v??'';});return o;});
+  const out=rows.map(r=>{const o={};cfg.fields.forEach(f=>{if(f.sensitive&&!['SD','PA'].includes(ME.role))return;let v=r[f.k];if(f.t==='acc')v=v?accLabel(v):'';o[f.l]=v??'';});return o;});
   if(!out.length)return toast('Chưa có dữ liệu để xuất');
   const ws=XLSX.utils.json_to_sheet(out);const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,cfg.title.slice(0,20));XLSX.writeFile(wb,'RSA-'+key+'-'+todayStr()+'.xlsx');
@@ -563,9 +632,11 @@ async function importXlsx(key,file){
       else if((f.t==='sel'||f.t==='cat')){const opts=f.t==='cat'?catOpts(f.cat):f.opts;if(v&&!opts.includes(String(v).trim()))errs.push(f.l+' ngoài danh mục');v=String(v).trim();}
       o[f.k]=v;
     });
-    // trùng khóa
-    const dup=existing.find(e=>cfg.key.every(k=>String(e[k]??'')===String(o[k]??'')));
-    if(dup)o._dup=dup.id;
+    // trùng khóa (chỉ check khi module có khóa và giá trị khóa không rỗng)
+    if(cfg.key&&cfg.key.every(k=>String(o[k]??'').trim()!=='')){
+      const dup=existing.find(e=>cfg.key.every(k=>String(e[k]??'')===String(o[k]??'')));
+      if(dup)o._dup=dup.id;
+    }
     o._row=i+2;o._errs=errs;
     return o;
   });
@@ -594,7 +665,9 @@ $('impCommit').onclick=async()=>{
       if(cfg.table==='accounts')delete payload.status; // import không đổi trạng thái TK
       const {error}=await sb.from(cfg.table).update(payload).eq('id',p._dup);if(!error)upd++;
     }else{
-      payload.created_by=ME.id;const {error}=await sb.from(cfg.table).insert(payload);if(!error)ins++;
+      Object.keys(payload).forEach(k=>{if(payload[k]==null)delete payload[k];});
+      if(cfg.userCol)payload[cfg.userCol]=ME.id;
+      const {error}=await sb.from(cfg.table).insert(payload);if(!error)ins++;
     }
   }
   await logAct('Nhập Excel',cfg.table,cfg.title,`thêm ${ins}, cập nhật ${upd}, bỏ qua ${skip}`);
@@ -626,9 +699,23 @@ async function renderDash(){
   const accs=accR.data||[],cases=caseR.data||[],reqs=reqR.data||[],pipes=pipeR.data||[],exps=expR.data||[];
   const act=(p)=>accs.filter(a=>a.status==='Active'&&a.platform===p).length;
   const dead=accs.filter(a=>['Die','Suspend'].includes(a.status)).length;
+  // snapshot tuần: tự chốt khi người đầu tiên mở dashboard trong tuần mới
+  const wk=mondayOf(new Date());let snaps=[];
+  if(ME.role!=='SELLER'){
+    snaps=(await sb.from('weekly_snapshots').select('*').order('week_start')).data||[];
+    if(!snaps.find(s=>s.week_start===wk)){
+      const row={week_start:wk,tts_active:act('TTS'),amz_active:act('AMZ'),etsy_active:act('Etsy'),other_active:act('Khác'),die_total:dead};
+      const {error}=await sb.from('weekly_snapshots').insert(row);if(!error)snaps.push(row);
+    }
+  }
+  const prev=snaps.filter(s=>s.week_start<wk).pop();
+  const delta=(cur,pv,inverse)=>{if(!prev||pv==null)return '—';const d=cur-num(pv);if(!d)return '= tuần trước';const good=inverse?d<0:d>0;return `<span class="${good?'up':'down'}">${d>0?'↑':'↓'}${Math.abs(d)} so tuần trước</span>`;};
   $('kpis').innerHTML=[
-    ['TTS active',act('TTS'),'green'],['AMZ active',act('AMZ'),'green'],['Etsy active',act('Etsy'),'green'],['Die / Suspend',dead,'red']
-  ].map(([l,v,c])=>`<div class="card kpi"><div class="label">${l}</div><div class="val ${c==='red'?'down':''}">${v}</div></div>`).join('');
+    ['TTS active',act('TTS'),delta(act('TTS'),prev?prev.tts_active:null)],
+    ['AMZ active',act('AMZ'),delta(act('AMZ'),prev?prev.amz_active:null)],
+    ['Etsy active',act('Etsy'),delta(act('Etsy'),prev?prev.etsy_active:null)],
+    ['Die / Suspend',dead,delta(dead,prev?prev.die_total:null,true)]
+  ].map(([l,v,d],i)=>`<div class="card kpi"><div class="label">${l}</div><div class="val ${i===3?'down':''}">${v}</div><div class="delta">${d}</div></div>`).join('');
   // seller table
   const sellers=[...new Set(accs.map(a=>a.seller).filter(Boolean))];
   let sRows=sellers.map(s=>{const list=accs.filter(a=>a.seller===s);const a=list.filter(x=>x.status==='Active').length;const d=list.filter(x=>['Die','Suspend','Thu hồi'].includes(x.status)).length;const tot=a+d;const rate=tot?Math.round(a/tot*100):0;
@@ -661,9 +748,9 @@ async function renderDash(){
   // pipeline
   $('pipeBox').innerHTML=pipes.length?pipes.map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)"><div><b>${esc(p.batch_name)}</b> <span class="muted">· ${esc(p.platform)} · ${p.qty} TK</span></div>${badge(MODULES.pipeline,'stage',p.stage)}</div>`).join(''):'<div class="empty">Chưa có batch</div>';
   // alerts
-  const al=await computeAlerts();
-  const hi=al.filter(a=>a.lv==='hi');
-  $('dashAlerts').innerHTML=hi.length?hi.slice(0,6).map(a=>alertHtml(a)).join(''):'<div class="empty">Không có cảnh báo cao 🎉</div>';
+  await loadSeen();const al=await computeAlerts();window._alerts=al;
+  const hi=al.map((a,i)=>({a,i})).filter(x=>x.a.lv==='hi').slice(0,6);
+  $('dashAlerts').innerHTML=hi.length?hi.map(x=>alertHtml(x.a,x.i)).join(''):'<div class="empty">Không có cảnh báo cao 🎉</div>';
   updateAlertBadge(al);
 }
 
@@ -675,7 +762,7 @@ async function computeAlerts(){
   const accs=accR.data||[],cases=caseR.data||[],reqs=reqR.data||[],prox=proxR.data||[],tools=toolR.data||[],llcs=llcR.data||[],cards=cardR.data||[];
   const A=[];const D=(k,b)=>daysBetween(b||todayStr(),k);
   accs.forEach(a=>{if(['Die','Suspend'].includes(a.status)&&a.status_changed_at&&daysBetween(a.status_changed_at)<=1)A.push({lv:'hi',ic:'🔴',t:`TK ${a.name} chuyển ${a.status} trong 24h`,w:`seller ${a.seller} · lỗi ${a.error_type||'?'}`});
-    if(['Die','Suspend','Khóa'].includes(a.status)&&num(a.onhold_usd)>500)A.push({lv:'hi',ic:'🔴',t:`TK ${a.name} khóa — $${fmtUsd(a.onhold_usd)} on-hold`,w:`seller ${a.seller}`});});
+    if(['Die','Suspend'].includes(a.status)&&num(a.onhold_usd)>500)A.push({lv:'hi',ic:'🔴',t:`TK ${a.name} khóa — $${fmtUsd(a.onhold_usd)} on-hold`,w:`seller ${a.seller}`});});
   // seller retention <60
   const sellers=[...new Set(accs.map(a=>a.seller).filter(Boolean))];
   sellers.forEach(s=>{const list=accs.filter(a=>a.seller===s);const act=list.filter(x=>x.status==='Active').length;const tot=list.filter(x=>['Active','Die','Suspend','Thu hồi'].includes(x.status)).length;if(tot>=3){const r=Math.round(act/tot*100);if(r<60)A.push({lv:'mid',ic:'🟠',t:`${s} tỷ lệ giữ TK thấp: ${r}%`,w:`${act}/${tot} active`});}});
@@ -687,20 +774,27 @@ async function computeAlerts(){
     if(a.phone_change_due){const d=D(a.phone_change_due);if(d>=0&&d<=7)A.push({lv:'lo',ic:'🟡',t:`TK ${a.name} đến hạn thay phone trong ${d} ngày`,w:''});}});
   llcs.forEach(l=>{if(l.end_date){const d=D(l.end_date);if(d>=0&&d<=30)A.push({lv:'lo',ic:'🟡',t:`LLC ${l.llc_name} hết hạn trong ${d} ngày`,w:l.owner_name});}});
   cards.forEach(c=>{if(num(c.balance_vnd)>0&&num(c.balance_vnd)<1200000)A.push({lv:'lo',ic:'🟡',t:`Thẻ charge ${c.person} số dư thấp: ${fmtVnd(c.balance_vnd)}₫`,w:c.period_label});});
+  try{
+    const {data:snaps}=await sb.from('weekly_snapshots').select('*').order('week_start');
+    const wk=mondayOf(new Date());const prev=(snaps||[]).filter(s=>s.week_start<wk).pop();
+    if(prev){const prevTot=num(prev.tts_active)+num(prev.amz_active)+num(prev.etsy_active)+num(prev.other_active);
+      const curTot=accs.filter(a=>a.status==='Active').length;
+      if(prevTot-curTot>3)A.push({lv:'hi',ic:'🔴',t:`Tổng active giảm ${prevTot-curTot} TK so với tuần trước`,w:`${prevTot} → ${curTot}`});}
+  }catch(e){}
   A.forEach(a=>a.key=a.t);
   const order={hi:0,mid:1,lo:2};A.sort((x,y)=>order[x.lv]-order[y.lv]);
   return A;
 }
 let SEEN=new Set();
-function alertHtml(a){const seen=SEEN.has(a.key);return `<div class="alert ${a.lv} ${seen?'seen':''}" onclick="markSeen(this,'${esc(a.key).replace(/'/g,"")}')"><div class="ic">${a.ic}</div><div><b>${esc(a.t)}</b><div class="who">${esc(a.w||'')}</div></div>${seen?'<span class="seen-tag">✓ đã xem</span>':'<span class="who">bấm để ẩn</span>'}</div>`;}
-async function markSeen(el,key){SEEN.add(key);el.classList.add('seen');try{await sb.from('alert_seen').insert({alert_key:key.slice(0,300),user_id:ME.id});}catch(e){}}
+function alertHtml(a,i){const seen=SEEN.has(a.key);return `<div class="alert ${a.lv} ${seen?'seen':''}" onclick="markSeenIdx(this,${i})"><div class="ic">${a.ic}</div><div><b>${esc(a.t)}</b><div class="who">${esc(a.w||'')}</div></div>${seen?'<span class="seen-tag">✓ đã xem</span>':'<span class="who">bấm để ẩn</span>'}</div>`;}
+async function markSeenIdx(el,i){const a=(window._alerts||[])[i];if(!a)return;SEEN.add(a.key);el.classList.add('seen');try{await sb.from('alert_seen').insert({alert_key:a.key.slice(0,300),user_id:ME.id});}catch(e){}updateAlertBadge(window._alerts);}
 async function loadSeen(){const {data}=await sb.from('alert_seen').select('alert_key').eq('user_id',ME.id);SEEN=new Set((data||[]).map(x=>x.alert_key));}
 function updateAlertBadge(al){const cnt=(al||[]).filter(a=>!SEEN.has(a.key)).length;const b=$('navAlerts');if(b){b.textContent=cnt;b.style.display=cnt?'inline-block':'none';}}
 async function renderAlerts(){
   $('pageArea').innerHTML=`<div class="topbar"><div><h1>Cảnh báo</h1><div class="sub">Tự sinh từ dữ liệu · ưu tiên cao → thấp</div></div>
     <button class="btn ghost sm" onclick="markAllSeen()">✓ Đánh dấu tất cả đã xem</button></div><div id="alertList"></div>`;
   await loadSeen();const al=await computeAlerts();window._alerts=al;
-  $('alertList').innerHTML=al.length?al.map(a=>alertHtml(a)).join(''):'<div class="card empty">Không có cảnh báo nào 🎉</div>';
+  $('alertList').innerHTML=al.length?al.map((a,i)=>alertHtml(a,i)).join(''):'<div class="card empty">Không có cảnh báo nào 🎉</div>';
   updateAlertBadge(al);
 }
 async function markAllSeen(){for(const a of (window._alerts||[])){if(!SEEN.has(a.key)){SEEN.add(a.key);try{await sb.from('alert_seen').insert({alert_key:a.key.slice(0,300),user_id:ME.id});}catch(e){}}}renderAlerts();toast('Đã đánh dấu tất cả ✓');}
