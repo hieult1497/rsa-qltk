@@ -85,6 +85,8 @@
   .filters input.search{min-width:200px;flex:1}
   .filters .cnt{margin-left:auto;color:var(--muted);font-size:12px}
   .empty{padding:34px;text-align:center;color:var(--muted)}
+  .lnk{cursor:pointer}.lnk:hover{text-decoration:underline;color:var(--brand)}
+  .kpi.clk{cursor:pointer;transition:transform .1s}.kpi.clk:hover{transform:translateY(-2px);border-color:var(--brand)}
   .alert{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:11px 14px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--panel);cursor:pointer}
   .alert .ic{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:800;flex-shrink:0}
   .alert.seen{opacity:.45}
@@ -201,6 +203,12 @@
   <div class="mf"><span class="err" id="impInfo" style="color:var(--muted)"></span>
     <button class="btn ghost" onclick="document.getElementById('impModal').classList.remove('show')">Hủy</button>
     <button class="btn" id="impCommit">Xác nhận nhập</button></div>
+</div></div>
+
+<!-- DRILL MODAL: bấm số → danh sách TK -->
+<div class="modal" id="drillModal"><div class="box">
+  <div class="mh"><b id="drillTitle"></b><div class="mx" onclick="$('drillModal').classList.remove('show')">✕</div></div>
+  <div id="drillBody" style="padding:14px 18px;max-height:62vh;overflow:auto"></div>
 </div></div>
 
 <div class="toast" id="toast"></div>
@@ -325,6 +333,7 @@ const MODULES={
       {k:'note',l:'Ghi chú',t:'textarea',full:1},
     ],
     cols:['name','platform','seller','status','source','warranty_end','balance_usd','onhold_usd','note'],
+    filters:[['platform','Tất cả sàn',()=>PLAT],['status','Tất cả trạng thái',()=>ACC_STATUS],['source','Tất cả nguồn',()=>catOpts('nguon_tk')],['browser','Mọi browser','data']],
     badges:{status:{Active:'green',Die:'red',Suspend:'amber','Thu hồi':'mut','Mới':'blue'}}},
   cases:{table:'cases',title:'Case kháng',sub:'Mỗi dòng = 1 case · link đến TK · SLA tự tính từ ngày ghi case.',
     sellerScope:'seller', key:['account_id','date_start','error_type'], userCol:'created_by',
@@ -339,6 +348,7 @@ const MODULES={
       {k:'note',l:'Ghi chú',t:'textarea',full:1},
     ],
     cols:['account_label','platform','seller','error_type','date_start','sla','status'],
+    filters:[['status','Tất cả trạng thái',()=>['Pending','Đang xử lý','Chờ support','Thành công','Thất bại','Dừng']],['platform','Tất cả sàn',()=>PLAT]],
     badges:{status:{'Thành công':'green','Thất bại':'red','Dừng':'mut','Pending':'amber','Đang xử lý':'blue','Chờ support':'purple'}}},
   requests:{table:'account_requests',title:'Yêu cầu cấp TK',sub:'Seller tạo → Lý/Giang duyệt → PA cấp.',
     sellerScope:'seller', key:['seller','account_type','request_date'], userCol:'requested_by',
@@ -355,6 +365,7 @@ const MODULES={
       {k:'note',l:'Ghi chú',t:'textarea',full:1},
     ],
     cols:['seller','account_type','reason','request_date','wait','approval_status','issue_status'],
+    filters:[['approval_status','Tất cả duyệt',()=>['Chờ duyệt','Đã duyệt','Từ chối']],['issue_status','Tất cả cấp',()=>['Chưa','Đã cấp','Không có nguồn']],['account_type','Tất cả loại',()=>['TTS','AMZ','Etsy','Kênh trắng','Gmail','Khác']]],
     badges:{approval_status:{'Đã duyệt':'green','Từ chối':'red','Chờ duyệt':'amber'},issue_status:{'Đã cấp':'green','Không có nguồn':'red','Chưa':'mut'}}},
   pipeline:{table:'pipeline_batches',title:'Pipeline TK mới',sub:'Đợt lập TK · 5 giai đoạn.',
     key:['batch_name'],
@@ -368,6 +379,7 @@ const MODULES={
       {k:'note',l:'Ghi chú',t:'textarea',full:1},
     ],
     cols:['batch_name','platform','qty','stageBar','start_date','eta_active'],
+    filters:[['stage','Tất cả giai đoạn',()=>['Chuẩn bị hồ sơ','Đã gửi','Chờ duyệt sàn','Active','Đã cấp seller']],['platform','Tất cả sàn',()=>PLAT]],
     badges:{stage:{'Active':'green','Đã cấp seller':'green','Chờ duyệt sàn':'amber','Đã gửi':'blue','Chuẩn bị hồ sơ':'mut'}}},
   mails:{table:'mails',title:'Mail',sub:'Email gắn với TK.',key:['gmail'],
     fields:[{k:'gmail',l:'Gmail',t:'text',req:1},{k:'mail_fw',l:'Mail forward',t:'text'},{k:'mail_type',l:'Loại',t:'text'},{k:'account_id',l:'TK gắn',t:'acc'},{k:'note',l:'Ghi chú',t:'textarea',full:1}],
@@ -375,6 +387,7 @@ const MODULES={
   proxies:{table:'proxies',title:'Proxy',sub:'Proxy gắn profile · có hạn → sinh cảnh báo.',key:['proxy_string'],
     fields:[{k:'vendor',l:'Nơi mua',t:'text'},{k:'buyer',l:'Người mua',t:'text'},{k:'profile_name',l:'Profile/TK gắn',t:'text'},{k:'proxy_string',l:'Chuỗi proxy',t:'text',req:1,sensitive:1},{k:'status',l:'Trạng thái',t:'sel',opts:['Active','Inactive'],req:1},{k:'price_vnd',l:'Giá (₫)',t:'num'},{k:'region',l:'Region',t:'text'},{k:'date_start',l:'Ngày cấp',t:'date'},{k:'date_end',l:'Ngày hết hạn',t:'date'},{k:'network',l:'Mạng',t:'text'},{k:'note',l:'Ghi chú',t:'textarea',full:1}],
     cols:['profile_name','proxy_string','status','region','date_end','exp'],
+    filters:[['status','Tất cả trạng thái',()=>['Active','Inactive']],['vendor','Tất cả nơi mua','data']],
     badges:{status:{Active:'green',Inactive:'mut'}}},
   payment_gateways:{table:'payment_gateways',title:'Cổng thanh toán',sub:'KHÔNG lưu số thẻ đầy đủ — chỉ 4 số cuối.',key:['account_ref'],
     fields:[{k:'account_ref',l:'TK (text)',t:'text',req:1},{k:'account_id',l:'TK gắn',t:'acc'},{k:'mail_payment',l:'Mail payment',t:'text'},{k:'gw_type',l:'Loại',t:'sel',opts:['PiPo','PO','Khác']},{k:'bank_note',l:'Bank nhận (mô tả)',t:'text'},{k:'card_last4',l:'4 số cuối thẻ',t:'text'},{k:'note',l:'Ghi chú',t:'textarea',full:1}],
@@ -382,6 +395,7 @@ const MODULES={
   tool_accounts:{table:'tool_accounts',title:'TK công cụ',sub:'Hidemium/Cotik/Helium10... có hạn gia hạn → cảnh báo.',key:['tool_type','mail'],
     fields:[{k:'tool_type',l:'Loại tool',t:'text',req:1},{k:'renew_date',l:'Hạn gia hạn',t:'date'},{k:'mail',l:'Mail',t:'text'},{k:'user_name',l:'Người dùng',t:'text'},{k:'status',l:'Trạng thái',t:'sel',opts:['Đang dùng','Dừng']},{k:'note',l:'Ghi chú',t:'textarea',full:1}],
     cols:['tool_type','mail','user_name','renew_date','exp','status'],
+    filters:[['status','Tất cả trạng thái',()=>['Đang dùng','Dừng']],['tool_type','Tất cả tool','data']],
     badges:{status:{'Đang dùng':'green','Dừng':'mut'}}},
   llcs:{table:'llcs',title:'LLC',sub:'Pháp nhân · sắp hết hạn → cảnh báo.',key:['llc_name'],
     fields:[{k:'owner_name',l:'Người đứng tên',t:'text',req:1},{k:'llc_name',l:'Tên LLC',t:'text',req:1},{k:'us_state',l:'Bang',t:'text'},{k:'start_date',l:'Start',t:'date'},{k:'end_date',l:'End',t:'date'},{k:'gmail',l:'Gmail',t:'text'},{k:'phone',l:'SĐT',t:'text'},{k:'fee_llc_usd',l:'Fee LLC ($)',t:'num'},{k:'fee_ein_usd',l:'Fee EIN ($)',t:'num'},{k:'status',l:'Trạng thái',t:'text'},{k:'address',l:'Địa chỉ',t:'text'},{k:'doc_link',l:'Doc link',t:'text'},{k:'note',l:'Ghi chú',t:'textarea',full:1}],
@@ -391,14 +405,16 @@ const MODULES={
     cols:['brand','tm_class','filing_date','serial_number','note']},
   devices:{table:'devices',title:'Thiết bị',sub:'Dcom / Phone / Khác.',key:['device_code'],
     fields:[{k:'device_type',l:'Loại',t:'sel',opts:['Dcom','Phone','Khác'],req:1},{k:'device_code',l:'Mã thiết bị',t:'text'},{k:'account_ref',l:'Gắn TK',t:'text'},{k:'network_label',l:'Nhãn mạng',t:'text'},{k:'sim_network',l:'Mạng sim',t:'text'},{k:'sim_owner',l:'Chủ sim',t:'text'},{k:'phone_number',l:'SĐT',t:'text'},{k:'data_expiry',l:'Hạn data',t:'date'},{k:'status',l:'Trạng thái',t:'text'},{k:'purpose',l:'Mục đích',t:'text'},{k:'receiver',l:'Người nhận',t:'text'},{k:'storage_place',l:'Nơi lưu',t:'text'},{k:'note',l:'Ghi chú',t:'textarea',full:1}],
-    cols:['device_type','device_code','account_ref','sim_owner','data_expiry','status']},
+    cols:['device_type','device_code','account_ref','sim_owner','data_expiry','status'],
+    filters:[['device_type','Tất cả loại',()=>['Dcom','Phone','Khác']]]},
   expenses:{table:'expenses',title:'Chi phí',sub:'Sổ chi · gộp 6 sheet Excel theo cột Nhóm.',key:null,userCol:'created_by',
     fields:[{k:'expense_date',l:'Ngày',t:'date',req:1},{k:'group_name',l:'Nhóm',t:'cat',cat:'nhom_chi_phi',req:1},{k:'content',l:'Nội dung',t:'text',req:1},{k:'amount_vnd',l:'Số tiền (₫)',t:'num',req:1},{k:'receiver',l:'Nơi nhận',t:'text'},{k:'requester',l:'Người request',t:'text'},{k:'platform',l:'Nền tảng',t:'sel',opts:PLAT},{k:'note',l:'Ghi chú',t:'textarea',full:1}],
     cols:['expense_date','group_name','content','amount_vnd','receiver','platform'],
     money:'amount_vnd'},
   card_charges:{table:'card_charges',title:'Thẻ charge AMZ',sub:'Theo dõi số dư thẻ charge theo kỳ.',key:['person','period_label'],
     fields:[{k:'person',l:'Người',t:'text',req:1},{k:'gmail',l:'Gmail',t:'text'},{k:'card_last4',l:'4 số cuối',t:'text'},{k:'monthly_fee_usd',l:'Phí/tháng ($)',t:'num'},{k:'period_label',l:'Kỳ',t:'text',req:1},{k:'charge_date',l:'Ngày charge',t:'date'},{k:'deposit_vnd',l:'Nạp (₫)',t:'num'},{k:'charged_vnd',l:'Đã charge (₫)',t:'num'},{k:'balance_vnd',l:'Số dư cuối (₫)',t:'num'},{k:'note',l:'Ghi chú',t:'textarea',full:1}],
-    cols:['person','period_label','deposit_vnd','charged_vnd','balance_vnd','note']},
+    cols:['person','period_label','deposit_vnd','charged_vnd','balance_vnd','note'],
+    filters:[['period_label','Tất cả kỳ','data'],['person','Tất cả người','data']]},
 };
 
 /* ============ MENU ============ */
@@ -474,9 +490,10 @@ async function renderModule(key){
       </div></div>
     <div class="filters"><input class="search" id="modSearch" placeholder="Tìm..." oninput="paintRows('${key}')">
       ${cfg.sellerScope&&['SD','QL','PA'].includes(ME.role)?`<select id="modSeller" onchange="paintRows('${key}')"><option value="">Tất cả seller</option>${catOpts('seller').map(s=>`<option>${esc(s)}</option>`).join('')}</select>`:''}
+      ${(cfg.filters||[]).map(ft=>`<select id="mf_${ft[0]}" onchange="paintRows('${key}')"><option value="">${ft[1]}</option>${(ft[2]==='data'?[]:ft[2]()).map(o=>`<option>${esc(o)}</option>`).join('')}</select>`).join('')}
       ${key==='expenses'?`<select id="modGroup" onchange="paintRows('expenses')"><option value="">Tất cả nhóm</option>${catOpts('nhom_chi_phi').map(g=>`<option>${esc(g)}</option>`).join('')}</select>
-      <input type="date" id="modFrom" onchange="paintRows('expenses')" title="Từ ngày">→<input type="date" id="modTo" onchange="paintRows('expenses')" title="Đến ngày">
-      <button class="btn ghost sm" onclick="$('modFrom').value='';$('modTo').value='';paintRows('expenses')">Xóa lọc</button>`:''}
+      <input type="date" id="modFrom" onchange="paintRows('expenses')" title="Từ ngày">→<input type="date" id="modTo" onchange="paintRows('expenses')" title="Đến ngày">`:''}
+      ${(cfg.filters||cfg.sellerScope||key==='expenses')?`<button class="btn ghost sm" onclick="clearModFilters('${key}')">Xóa lọc</button>`:''}
       <span class="cnt" id="modCount"></span></div>
     <div class="card" style="padding:0"><div class="tbl-wrap"><table>
       <thead><tr>${cfg.cols.map(c=>`<th>${colLabel(cfg,c)}</th>`).join('')}${showAct?'<th></th>':''}</tr></thead>
@@ -491,6 +508,16 @@ async function renderModule(key){
     const gs=[...new Set([...catOpts('nhom_chi_phi'),...(data||[]).map(r=>r.group_name).filter(Boolean)])].sort();
     $('modGroup').innerHTML='<option value="">Tất cả nhóm</option>'+gs.map(g=>`<option>${esc(g)}</option>`).join('');
   }
+  (cfg.filters||[]).forEach(ft=>{
+    if(ft[2]==='data'&&$('mf_'+ft[0])){
+      const vs=[...new Set((data||[]).map(r=>r[ft[0]]).filter(Boolean))].sort();
+      $('mf_'+ft[0]).innerHTML=`<option value="">${ft[1]}</option>`+vs.map(o=>`<option>${esc(o)}</option>`).join('');
+    }});
+  paintRows(key);
+}
+function clearModFilters(key){
+  ['modSearch','modSeller','modGroup','modFrom','modTo'].forEach(id=>{if($(id))$(id).value='';});
+  (MODULES[key].filters||[]).forEach(ft=>{if($('mf_'+ft[0]))$('mf_'+ft[0]).value='';});
   paintRows(key);
 }
 function colLabel(cfg,c){
@@ -504,6 +531,7 @@ function paintRows(key){
   if(term)rows=rows.filter(r=>JSON.stringify(r).toLowerCase().includes(term));
   if(ME.role==='SELLER'&&cfg.sellerScope)rows=rows.filter(r=>r.seller===ME.seller_name);
   const sf=$('modSeller')?.value;if(sf)rows=rows.filter(r=>r.seller===sf);
+  (cfg.filters||[]).forEach(ft=>{const el=$('mf_'+ft[0]);if(el&&el.value)rows=rows.filter(r=>String(r[ft[0]]??'')===el.value);});
   const gf=$('modGroup')?$('modGroup').value:'';if(gf)rows=rows.filter(r=>r.group_name===gf);
   const df=$('modFrom')?$('modFrom').value:'',dt=$('modTo')?$('modTo').value:'';
   if(df)rows=rows.filter(r=>(r.expense_date||'')>=df);
@@ -770,6 +798,7 @@ async function renderDash(){
   const reqs=reqR.data||[];
   const pipes=(pipeR.data||[]).filter(p=>(!DF.plat||p.platform===DF.plat)&&tOK(p.start_date));
   const exps=(expR.data||[]).filter(e=>tOK(e.expense_date));
+  window._dashAccs=accs;
   const act=(p)=>accs.filter(a=>a.status==='Active'&&a.platform===p).length;
   const dead=accs.filter(a=>['Die','Suspend'].includes(a.status)).length;
   const actAll=(p)=>all.filter(a=>a.status==='Active'&&a.platform===p).length;
@@ -786,20 +815,22 @@ async function renderDash(){
   const prev=snaps.filter(s=>s.week_start<wk).pop();
   const delta=(cur,pv,inverse)=>{if(filtering||!prev||pv==null)return '—';const d=cur-num(pv);if(!d)return '= tuần trước';const good=inverse?d<0:d>0;return `<span class="${good?'up':'down'}">${d>0?'↑':'↓'}${Math.abs(d)} so tuần trước</span>`;};
   $('kpis').innerHTML=[
-    ['TTS active',act('TTS'),delta(act('TTS'),prev?prev.tts_active:null)],
-    ['AMZ active',act('AMZ'),delta(act('AMZ'),prev?prev.amz_active:null)],
-    ['Etsy active',act('Etsy'),delta(act('Etsy'),prev?prev.etsy_active:null)],
-    ['Die / Suspend',dead,delta(dead,prev?prev.die_total:null,true)]
-  ].map(([l,v,d],i)=>`<div class="card kpi"><div class="label">${l}</div><div class="val ${i===3?'down':''}">${v}</div><div class="delta">${d}</div></div>`).join('');
+    ['TTS active',act('TTS'),delta(act('TTS'),prev?prev.tts_active:null),'aTTS'],
+    ['AMZ active',act('AMZ'),delta(act('AMZ'),prev?prev.amz_active:null),'aAMZ'],
+    ['Etsy active',act('Etsy'),delta(act('Etsy'),prev?prev.etsy_active:null),'aEtsy'],
+    ['Die / Suspend',dead,delta(dead,prev?prev.die_total:null,true),'dead']
+  ].map(([l,v,d,c],i)=>`<div class="card kpi clk" onclick="dashDrill('${c}')" title="Bấm xem danh sách"><div class="label">${l}</div><div class="val ${i===3?'down':''}">${v}</div><div class="delta">${d}</div></div>`).join('');
   // seller table
   const sellers=[...new Set(accs.map(a=>a.seller).filter(Boolean))];
-  let sRows=sellers.map(s=>{const list=accs.filter(a=>a.seller===s);const a=list.filter(x=>x.status==='Active').length;const d=list.filter(x=>['Die','Suspend','Thu hồi'].includes(x.status)).length;const tot=a+d;const rate=tot?Math.round(a/tot*100):0;
-    return {s,a,d,tot,rate};}).sort((x,y)=>y.tot-x.tot);
-  $('sellerTbl').innerHTML=`<thead><tr><th>Seller</th><th class="num">Active</th><th class="num">Die</th><th class="num">Cấp</th><th class="num">Giữ TK</th></tr></thead><tbody>${sRows.map(r=>`<tr><td>${esc(r.s)}</td><td class="num">${r.a}</td><td class="num">${r.d}</td><td class="num">${r.tot}</td><td class="num"><span class="chip ${r.rate>=80?'green':r.rate>=60?'amber':'red'}">${r.rate}%</span></td></tr>`).join('')||'<tr><td colspan="5" class="empty">Chưa có TK</td></tr>'}</tbody>`;
+  let sRows=sellers.map(s=>{const list=accs.filter(a=>a.seller===s);const a=list.filter(x=>x.status==='Active').length;const d=list.filter(x=>['Die','Suspend','Thu hồi'].includes(x.status)).length;const n=list.length;const tot=a+d;const rate=tot?Math.round(a/tot*100):0;
+    return {s,a,d,n,tot,rate};}).sort((x,y)=>y.n-x.n);
+  const sumA=sRows.reduce((x,r)=>x+r.a,0),sumD=sRows.reduce((x,r)=>x+r.d,0),sumT=sRows.reduce((x,r)=>x+r.tot,0),sumN=sRows.reduce((x,r)=>x+r.n,0);
+  const sumRate=sumT?Math.round(sumA/sumT*100):0;
+  $('sellerTbl').innerHTML=`<thead><tr><th>Seller</th><th class="num">Active</th><th class="num">Die</th><th class="num">Cấp</th><th class="num">Tổng TK</th><th class="num">Giữ TK</th></tr></thead><tbody>${sRows.map(r=>`<tr><td>${esc(r.s)}</td><td class="num lnk" onclick="dashDrill('sel_a','${esc(r.s)}')">${r.a}</td><td class="num lnk" onclick="dashDrill('sel_d','${esc(r.s)}')">${r.d}</td><td class="num lnk" onclick="dashDrill('sel_cap','${esc(r.s)}')">${r.tot}</td><td class="num lnk" onclick="dashDrill('sel_all','${esc(r.s)}')"><b>${r.n}</b></td><td class="num"><span class="chip ${r.rate>=80?'green':r.rate>=60?'amber':'red'}">${r.rate}%</span></td></tr>`).join('')||'<tr><td colspan="6" class="empty">Chưa có TK</td></tr>'}${sRows.length?`<tr><td><b>Tổng cộng</b></td><td class="num"><b>${sumA}</b></td><td class="num"><b>${sumD}</b></td><td class="num"><b>${sumT}</b></td><td class="num"><b>${sumN}</b></td><td class="num"><span class="chip ${sumRate>=80?'green':sumRate>=60?'amber':'red'}">${sumRate}%</span></td></tr>`:''}</tbody>`;
   // source table
   const srcs=[...new Set(accs.map(a=>a.source).filter(Boolean))];
   let srcRows=srcs.map(s=>{const list=accs.filter(a=>a.source===s);const a=list.filter(x=>x.status==='Active').length;const tot=list.length;const rate=tot?Math.round(a/tot*100):0;return {s,a,tot,rate};}).sort((x,y)=>y.tot-x.tot);
-  $('srcTbl').innerHTML=`<thead><tr><th>Nguồn</th><th class="num">Active</th><th class="num">Tổng</th><th class="num">Sống</th></tr></thead><tbody>${srcRows.map(r=>`<tr><td>${esc(r.s)}</td><td class="num">${r.a}</td><td class="num">${r.tot}</td><td class="num"><span class="chip ${r.rate>=80?'green':r.rate>=60?'amber':'red'}">${r.rate}%</span></td></tr>`).join('')||'<tr><td colspan="4" class="empty">Chưa có nguồn</td></tr>'}</tbody>`;
+  $('srcTbl').innerHTML=`<thead><tr><th>Nguồn</th><th class="num">Active</th><th class="num">Tổng</th><th class="num">Sống</th></tr></thead><tbody>${srcRows.map(r=>`<tr><td>${esc(r.s)}</td><td class="num lnk" onclick="dashDrill('src_a','${esc(r.s)}')">${r.a}</td><td class="num lnk" onclick="dashDrill('src_all','${esc(r.s)}')">${r.tot}</td><td class="num"><span class="chip ${r.rate>=80?'green':r.rate>=60?'amber':'red'}">${r.rate}%</span></td></tr>`).join('')||'<tr><td colspan="4" class="empty">Chưa có nguồn</td></tr>'}</tbody>`;
   // cases
   const pend=cases.filter(c=>['Pending','Đang xử lý','Chờ support'].includes(c.status));
   const byPlat=p=>pend.filter(c=>c.platform===p).length;
@@ -831,6 +862,25 @@ async function renderDash(){
   updateAlertBadge(al);
 }
 
+function dashDrill(code,val){
+  const A=window._dashAccs||[];let list=[],title='';
+  const ACT=x=>x.status==='Active',DEAD=x=>['Die','Suspend'].includes(x.status);
+  if(code==='aTTS'||code==='aAMZ'||code==='aEtsy'){const p=code.slice(1);list=A.filter(x=>ACT(x)&&x.platform===p);title=p+' đang Active';}
+  else if(code==='dead'){list=A.filter(DEAD);title='TK Die / Suspend';}
+  else if(code==='sel_a'){list=A.filter(x=>x.seller===val&&ACT(x));title=val+' · Active';}
+  else if(code==='sel_d'){list=A.filter(x=>x.seller===val&&['Die','Suspend','Thu hồi'].includes(x.status));title=val+' · Die/Suspend/Thu hồi';}
+  else if(code==='sel_cap'){list=A.filter(x=>x.seller===val&&(ACT(x)||['Die','Suspend','Thu hồi'].includes(x.status)));title=val+' · Đã cấp';}
+  else if(code==='sel_all'){list=A.filter(x=>x.seller===val);title=val+' · Tất cả TK';}
+  else if(code==='src_a'){list=A.filter(x=>x.source===val&&ACT(x));title='Nguồn '+val+' · Active';}
+  else if(code==='src_all'){list=A.filter(x=>x.source===val);title='Nguồn '+val+' · Tất cả';}
+  $('drillTitle').textContent=title+' — '+list.length+' TK';
+  $('drillBody').innerHTML=list.length?
+    `<table><thead><tr><th>Tên TK</th><th>Sàn</th><th>Seller</th><th>Trạng thái</th><th>Nguồn</th><th>Lỗi</th></tr></thead><tbody>${
+      list.map(a=>`<tr><td>${esc(a.name)}</td><td>${a.platform}</td><td>${esc(a.seller)}</td><td>${badge(MODULES.accounts,'status',a.status)}</td><td>${esc(a.source||'')}</td><td class="muted">${esc((a.error_type||'').slice(0,30))}</td></tr>`).join('')
+    }</tbody></table><div style="margin-top:12px;text-align:right"><button class="btn ghost sm" onclick="$('drillModal').classList.remove('show');go('accounts')">Mở trang Tài khoản ›</button></div>`
+    :'<div class="empty">Không có TK nào trong nhóm này.</div>';
+  $('drillModal').classList.add('show');
+}
 function expInPeriod(e,p){
   const d=new Date(e.expense_date),now=new Date();
   if(p==='month')return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear();
