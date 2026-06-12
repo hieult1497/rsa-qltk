@@ -56,7 +56,7 @@
   .btn:disabled{opacity:.5;cursor:not-allowed}
   .view{display:none}.view.active{display:block}
   .grid{display:grid;gap:14px}
-  .kpis{grid-template-columns:repeat(4,1fr)}
+  .kpis{grid-template-columns:repeat(5,1fr)}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px}
   .kpi .label{color:var(--muted);font-size:12px}
   .kpi .val{font-size:25px;font-weight:800;margin-top:6px}
@@ -176,7 +176,7 @@
 <!-- APP -->
 <div class="app" id="app" style="display:none">
   <aside class="side collapsed" id="side">
-    <div class="logo"><div class="dot">R</div><div><b>RSA QLTK</b><small>RS Agency</small></div>
+    <div class="logo"><div class="dot">R</div><div><b>RSA QLTK</b><small>RS Agency · v1.4</small></div>
       <button class="hamb" id="hamb">☰</button></div>
     <div class="user"><div class="av" id="uAv">?</div><div><b id="uName">—</b><small id="uRole">—</small></div>
       <div style="margin-left:auto;display:flex;gap:8px"><div class="out" id="btnTheme" title="Đổi màu">◐</div><div class="out" id="btnOut" title="Đăng xuất">⎋</div></div></div>
@@ -815,11 +815,12 @@ async function renderDash(){
   const prev=snaps.filter(s=>s.week_start<wk).pop();
   const delta=(cur,pv,inverse)=>{if(filtering||!prev||pv==null)return '—';const d=cur-num(pv);if(!d)return '= tuần trước';const good=inverse?d<0:d>0;return `<span class="${good?'up':'down'}">${d>0?'↑':'↓'}${Math.abs(d)} so tuần trước</span>`;};
   $('kpis').innerHTML=[
-    ['TTS active',act('TTS'),delta(act('TTS'),prev?prev.tts_active:null),'aTTS'],
-    ['AMZ active',act('AMZ'),delta(act('AMZ'),prev?prev.amz_active:null),'aAMZ'],
-    ['Etsy active',act('Etsy'),delta(act('Etsy'),prev?prev.etsy_active:null),'aEtsy'],
-    ['Die / Suspend',dead,delta(dead,prev?prev.die_total:null,true),'dead']
-  ].map(([l,v,d,c],i)=>`<div class="card kpi clk" onclick="dashDrill('${c}')" title="Bấm xem danh sách"><div class="label">${l}</div><div class="val ${i===3?'down':''}">${v}</div><div class="delta">${d}</div></div>`).join('');
+    ['Tổng TK',accs.length,'mọi trạng thái','all',''],
+    ['TTS active',act('TTS'),delta(act('TTS'),prev?prev.tts_active:null),'aTTS',''],
+    ['AMZ active',act('AMZ'),delta(act('AMZ'),prev?prev.amz_active:null),'aAMZ',''],
+    ['Etsy active',act('Etsy'),delta(act('Etsy'),prev?prev.etsy_active:null),'aEtsy',''],
+    ['Die / Suspend',dead,delta(dead,prev?prev.die_total:null,true),'dead','down']
+  ].map(([l,v,d,c,cls])=>`<div class="card kpi clk" onclick="dashDrill('${c}')" title="Bấm xem danh sách"><div class="label">${l}</div><div class="val ${cls}">${v}</div><div class="delta">${d}</div></div>`).join('');
   // seller table
   const sellers=[...new Set(accs.map(a=>a.seller).filter(Boolean))];
   let sRows=sellers.map(s=>{const list=accs.filter(a=>a.seller===s);const a=list.filter(x=>x.status==='Active').length;const d=list.filter(x=>['Die','Suspend','Thu hồi'].includes(x.status)).length;const n=list.length;const tot=a+d;const rate=tot?Math.round(a/tot*100):0;
@@ -865,7 +866,8 @@ async function renderDash(){
 function dashDrill(code,val){
   const A=window._dashAccs||[];let list=[],title='';
   const ACT=x=>x.status==='Active',DEAD=x=>['Die','Suspend'].includes(x.status);
-  if(code==='aTTS'||code==='aAMZ'||code==='aEtsy'){const p=code.slice(1);list=A.filter(x=>ACT(x)&&x.platform===p);title=p+' đang Active';}
+  if(code==='all'){list=A;title='Tất cả tài khoản';}
+  else if(code==='aTTS'||code==='aAMZ'||code==='aEtsy'){const p=code.slice(1);list=A.filter(x=>ACT(x)&&x.platform===p);title=p+' đang Active';}
   else if(code==='dead'){list=A.filter(DEAD);title='TK Die / Suspend';}
   else if(code==='sel_a'){list=A.filter(x=>x.seller===val&&ACT(x));title=val+' · Active';}
   else if(code==='sel_d'){list=A.filter(x=>x.seller===val&&['Die','Suspend','Thu hồi'].includes(x.status));title=val+' · Die/Suspend/Thu hồi';}
