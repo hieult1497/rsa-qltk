@@ -751,13 +751,7 @@ async function renderDash(){
       <div class="card"><h3>Tài chính <span class="tag">VND & USD tách riêng</span></h3><div id="finBox"></div></div>
     </div>
     <div class="grid" style="grid-template-columns:1.4fr 1fr;margin-top:14px">
-      <div class="card"><h3>Chi phí theo nhóm <span class="tag" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-        <select id="expPeriod" onchange="drawExpChart()" style="background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:7px;padding:4px 8px;font-size:12px">
-        <option value="month">Tháng này</option><option value="30">30 ngày</option><option value="quarter">Quý này</option><option value="year">Năm nay</option><option value="all">Tất cả</option></select>
-        <input type="date" id="expFrom" onchange="drawExpChart()" style="background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:7px;padding:3px 6px;font-size:12px">→
-        <input type="date" id="expTo" onchange="drawExpChart()" style="background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:7px;padding:3px 6px;font-size:12px">
-        <button class="btn ghost sm" onclick="$('expFrom').value='';$('expTo').value='';drawExpChart()">Xóa</button>
-      </span></h3><canvas id="expChart" style="max-height:220px"></canvas><div class="empty" id="expChartEmpty" style="display:none">Chưa có chi phí trong kỳ này.</div></div>
+      <div class="card"><h3>Chi phí theo nhóm <span class="tag">theo bộ lọc chung ở đầu trang</span></h3><canvas id="expChart" style="max-height:220px"></canvas><div class="empty" id="expChartEmpty" style="display:none">Chưa có chi phí trong kỳ đang lọc.</div></div>
       <div class="card"><h3>Số liệu theo nhóm <span class="tag" id="expTotalTag"></span></h3><div id="expTable" class="tbl-wrap"></div></div>
     </div>
     <div class="grid" style="grid-template-columns:1fr 1fr;margin-top:14px">
@@ -848,11 +842,7 @@ function expInPeriod(e,p){
 const EXP_COLORS=['#3ecf8e','#5b8cff','#f2c14e','#f06a6a','#9b7bff','#56b6c2','#e0664a','#8b92a7'];
 function drawExpChart(){
   if(!$('expChart'))return;
-  const p=$('expPeriod')?$('expPeriod').value:'month';
-  const f=$('expFrom')?$('expFrom').value:'',t=$('expTo')?$('expTo').value:'';
-  const exps=(window._exps||[]).filter(e=>{
-    if(f||t){const d=e.expense_date||'';if(f&&d<f)return false;if(t&&d>t)return false;return true;}
-    return expInPeriod(e,p);});
+  const exps=window._exps||[]; // đã được lọc bởi bộ lọc chung của Tổng quan
   const sums={};exps.forEach(e=>{const g=e.group_name||'Khác';sums[g]=(sums[g]||0)+num(e.amount_vnd);});
   const pairs=Object.entries(sums).sort((a,b)=>b[1]-a[1]);
   const total=pairs.reduce((s,x)=>s+x[1],0);
@@ -863,10 +853,21 @@ function drawExpChart(){
   if(window._expChart){window._expChart.destroy();window._expChart=null;}
   if(!pairs.length||!window.Chart)return;
   const muted=getComputedStyle(document.body).getPropertyValue('--muted').trim()||'#8b92a7';
+  const txtColor=getComputedStyle(document.body).getPropertyValue('--text').trim()||'#e6e8ee';
   window._expChart=new Chart($('expChart'),{type:'bar',
     data:{labels:pairs.map(x=>x[0]),datasets:[{data:pairs.map(x=>x[1]),backgroundColor:pairs.map((_,i)=>EXP_COLORS[i%EXP_COLORS.length]),borderRadius:6}]},
-    options:{indexAxis:'y',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>fmtVnd(c.raw)+'₫'}}},
-      scales:{x:{ticks:{color:muted,callback:v=>v>=1e6?(v/1e6)+'tr':fmtVnd(v)},grid:{color:'rgba(128,128,128,.12)'}},y:{ticks:{color:muted},grid:{display:false}}}}});
+    options:{indexAxis:'y',layout:{padding:{right:84}},plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>fmtVnd(c.raw)+'₫'}}},
+      scales:{x:{ticks:{color:muted,callback:v=>v>=1e6?(v/1e6)+'tr':fmtVnd(v)},grid:{color:'rgba(128,128,128,.12)'}},y:{ticks:{color:muted},grid:{display:false}}}},
+    plugins:[{id:'barLabels',afterDatasetsDraw(chart){
+      const ctx=chart.ctx;ctx.save();ctx.font='600 11px -apple-system,Segoe UI,Roboto,Arial,sans-serif';ctx.textBaseline='middle';
+      chart.getDatasetMeta(0).data.forEach((bar,i)=>{
+        const v=chart.data.datasets[0].data[i];const lbl=fmtVnd(v);
+        const w=ctx.measureText(lbl).width;
+        let x=bar.x+6;
+        if(x+w>chart.chartArea.right+80)x=chart.chartArea.right+80-w;
+        ctx.fillStyle=txtColor;ctx.fillText(lbl,x,bar.y);
+      });ctx.restore();
+    }}]});
 }
 
 /* ============ CẢNH BÁO ============ */
