@@ -473,6 +473,9 @@ async function renderModule(key){
       </div></div>
     <div class="filters"><input class="search" id="modSearch" placeholder="Tìm..." oninput="paintRows('${key}')">
       ${cfg.sellerScope&&['SD','QL','PA'].includes(ME.role)?`<select id="modSeller" onchange="paintRows('${key}')"><option value="">Tất cả seller</option>${catOpts('seller').map(s=>`<option>${esc(s)}</option>`).join('')}</select>`:''}
+      ${key==='expenses'?`<select id="modGroup" onchange="paintRows('expenses')"><option value="">Tất cả nhóm</option>${catOpts('nhom_chi_phi').map(g=>`<option>${esc(g)}</option>`).join('')}</select>
+      <input type="date" id="modFrom" onchange="paintRows('expenses')" title="Từ ngày">→<input type="date" id="modTo" onchange="paintRows('expenses')" title="Đến ngày">
+      <button class="btn ghost sm" onclick="$('modFrom').value='';$('modTo').value='';paintRows('expenses')">Xóa lọc</button>`:''}
       <span class="cnt" id="modCount"></span></div>
     <div class="card" style="padding:0"><div class="tbl-wrap"><table>
       <thead><tr>${cfg.cols.map(c=>`<th>${colLabel(cfg,c)}</th>`).join('')}${showAct?'<th></th>':''}</tr></thead>
@@ -496,9 +499,15 @@ function paintRows(key){
   if(term)rows=rows.filter(r=>JSON.stringify(r).toLowerCase().includes(term));
   if(ME.role==='SELLER'&&cfg.sellerScope)rows=rows.filter(r=>r.seller===ME.seller_name);
   const sf=$('modSeller')?.value;if(sf)rows=rows.filter(r=>r.seller===sf);
+  const gf=$('modGroup')?$('modGroup').value:'';if(gf)rows=rows.filter(r=>r.group_name===gf);
+  const df=$('modFrom')?$('modFrom').value:'',dt=$('modTo')?$('modTo').value:'';
+  if(df)rows=rows.filter(r=>(r.expense_date||'')>=df);
+  if(dt)rows=rows.filter(r=>(r.expense_date||'')<=dt);
   const canEdit=['SD','PA'].includes(ME.role);
   const showAct=canEdit||key==='requests';
-  $('modCount').textContent=rows.length+' dòng';
+  let cnt=rows.length+' dòng';
+  if(cfg.money){cnt+=' · tổng '+fmtVnd(rows.reduce((a,r)=>a+num(r[cfg.money]),0))+'₫';}
+  $('modCount').textContent=cnt;
   $('modEmpty').style.display=rows.length?'none':'block';
   $('modBody').innerHTML=rows.map(r=>`<tr>${cfg.cols.map(c=>`<td>${cellVal(cfg,r,c)}</td>`).join('')}${showAct?`<td style="text-align:right;white-space:nowrap">${rowActs(key,r,canEdit)}</td>`:''}</tr>`).join('');
 }
@@ -727,6 +736,16 @@ async function renderDash(){
       <div class="card"><h3>Case kháng <span class="tag">đang tồn</span></h3><div id="caseBox"></div></div>
       <div class="card"><h3>Tài chính <span class="tag">VND & USD tách riêng</span></h3><div id="finBox"></div></div>
     </div>
+    <div class="grid" style="grid-template-columns:1.4fr 1fr;margin-top:14px">
+      <div class="card"><h3>Chi phí theo nhóm <span class="tag" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <select id="expPeriod" onchange="drawExpChart()" style="background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:7px;padding:4px 8px;font-size:12px">
+        <option value="month">Tháng này</option><option value="30">30 ngày</option><option value="quarter">Quý này</option><option value="year">Năm nay</option><option value="all">Tất cả</option></select>
+        <input type="date" id="expFrom" onchange="drawExpChart()" style="background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:7px;padding:3px 6px;font-size:12px">→
+        <input type="date" id="expTo" onchange="drawExpChart()" style="background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:7px;padding:3px 6px;font-size:12px">
+        <button class="btn ghost sm" onclick="$('expFrom').value='';$('expTo').value='';drawExpChart()">Xóa</button>
+      </span></h3><canvas id="expChart" style="max-height:220px"></canvas><div class="empty" id="expChartEmpty" style="display:none">Chưa có chi phí trong kỳ này.</div></div>
+      <div class="card"><h3>Số liệu theo nhóm <span class="tag" id="expTotalTag"></span></h3><div id="expTable" class="tbl-wrap"></div></div>
+    </div>
     <div class="grid" style="grid-template-columns:1fr 1fr;margin-top:14px">
       <div class="card"><h3>Pipeline TK mới</h3><div id="pipeBox"></div></div>
       <div class="card"><h3>Cảnh báo cao <span class="tag">cần xử ngay</span></h3><div id="dashAlerts"></div></div>
@@ -784,6 +803,8 @@ async function renderDash(){
     <div><div class="label muted">Mất do Die</div><b style="color:var(--red)">$${fmtUsd(lostUsd)}</b></div>
     <div><div class="label muted">Chi tháng này</div><b>${fmtVnd(expMonth)}₫</b></div>
     <div><div class="label muted">Chi từ đầu</div><b>${fmtVnd(expAll)}₫</b></div></div>`;
+  // chi phí theo nhóm
+  window._exps=exps;drawExpChart();
   // pipeline
   $('pipeBox').innerHTML=pipes.length?pipes.map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)"><div><b>${esc(p.batch_name)}</b> <span class="muted">· ${esc(p.platform)} · ${p.qty} TK</span></div>${badge(MODULES.pipeline,'stage',p.stage)}</div>`).join(''):'<div class="empty">Chưa có batch</div>';
   // alerts
@@ -791,6 +812,38 @@ async function renderDash(){
   const hi=al.map((a,i)=>({a,i})).filter(x=>x.a.lv==='hi').slice(0,6);
   $('dashAlerts').innerHTML=hi.length?hi.map(x=>alertHtml(x.a,x.i)).join(''):'<div class="empty">Không có cảnh báo cao 🎉</div>';
   updateAlertBadge(al);
+}
+
+function expInPeriod(e,p){
+  const d=new Date(e.expense_date),now=new Date();
+  if(p==='month')return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear();
+  if(p==='30')return (now-d)/86400000<=30&&d<=now;
+  if(p==='quarter')return d.getFullYear()===now.getFullYear()&&Math.floor(d.getMonth()/3)===Math.floor(now.getMonth()/3);
+  if(p==='year')return d.getFullYear()===now.getFullYear();
+  return true;
+}
+const EXP_COLORS=['#3ecf8e','#5b8cff','#f2c14e','#f06a6a','#9b7bff','#56b6c2','#e0664a','#8b92a7'];
+function drawExpChart(){
+  if(!$('expChart'))return;
+  const p=$('expPeriod')?$('expPeriod').value:'month';
+  const f=$('expFrom')?$('expFrom').value:'',t=$('expTo')?$('expTo').value:'';
+  const exps=(window._exps||[]).filter(e=>{
+    if(f||t){const d=e.expense_date||'';if(f&&d<f)return false;if(t&&d>t)return false;return true;}
+    return expInPeriod(e,p);});
+  const sums={};exps.forEach(e=>{const g=e.group_name||'Khác';sums[g]=(sums[g]||0)+num(e.amount_vnd);});
+  const pairs=Object.entries(sums).sort((a,b)=>b[1]-a[1]);
+  const total=pairs.reduce((s,x)=>s+x[1],0);
+  $('expTotalTag').textContent='Tổng: '+fmtVnd(total)+'₫';
+  $('expChartEmpty').style.display=pairs.length?'none':'block';
+  $('expChart').style.display=pairs.length?'block':'none';
+  $('expTable').innerHTML=pairs.length?`<table><thead><tr><th>Nhóm</th><th class="num">Số tiền (₫)</th><th class="num">%</th></tr></thead><tbody>${pairs.map(([g,v],i)=>`<tr><td><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${EXP_COLORS[i%EXP_COLORS.length]};margin-right:6px"></span>${esc(g)}</td><td class="num">${fmtVnd(v)}</td><td class="num">${total?Math.round(v/total*100):0}%</td></tr>`).join('')}<tr><td><b>Tổng</b></td><td class="num"><b>${fmtVnd(total)}</b></td><td class="num">100%</td></tr></tbody></table>`:'<div class="empty">Chưa có dữ liệu.</div>';
+  if(window._expChart){window._expChart.destroy();window._expChart=null;}
+  if(!pairs.length||!window.Chart)return;
+  const muted=getComputedStyle(document.body).getPropertyValue('--muted').trim()||'#8b92a7';
+  window._expChart=new Chart($('expChart'),{type:'bar',
+    data:{labels:pairs.map(x=>x[0]),datasets:[{data:pairs.map(x=>x[1]),backgroundColor:pairs.map((_,i)=>EXP_COLORS[i%EXP_COLORS.length]),borderRadius:6}]},
+    options:{indexAxis:'y',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>fmtVnd(c.raw)+'₫'}}},
+      scales:{x:{ticks:{color:muted,callback:v=>v>=1e6?(v/1e6)+'tr':fmtVnd(v)},grid:{color:'rgba(128,128,128,.12)'}},y:{ticks:{color:muted},grid:{display:false}}}}});
 }
 
 /* ============ CẢNH BÁO ============ */
