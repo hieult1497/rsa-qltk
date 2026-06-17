@@ -176,7 +176,7 @@
 <!-- APP -->
 <div class="app" id="app" style="display:none">
   <aside class="side collapsed" id="side">
-    <div class="logo"><div class="dot">R</div><div><b>RSA QLTK</b><small>RS Agency · v1.4</small></div>
+    <div class="logo"><div class="dot">R</div><div><b>RSA QLTK</b><small>RS Agency · v1.6</small></div>
       <button class="hamb" id="hamb">☰</button></div>
     <div class="user"><div class="av" id="uAv">?</div><div><b id="uName">—</b><small id="uRole">—</small></div>
       <div style="margin-left:auto;display:flex;gap:8px"><div class="out" id="btnTheme" title="Đổi màu">◐</div><div class="out" id="btnOut" title="Đăng xuất">⎋</div></div></div>
@@ -437,7 +437,6 @@ const NAV=[
   {key:'devices',ic:'▭',label:'Thiết bị',roles:['SD','QL','PA']},
   {sec:'TÀI CHÍNH'},
   {key:'expenses',ic:'₫',label:'Chi phí',roles:['SD','QL','PA']},
-  {key:'card_charges',ic:'▱',label:'Thẻ charge AMZ',roles:['SD','QL','PA']},
   {sec:'HỆ THỐNG'},
   {key:'perms',ic:'⚑',label:'Phân quyền',roles:['SD']},
   {key:'cats',ic:'≣',label:'Danh mục',roles:['SD','PA']},
@@ -477,7 +476,7 @@ async function renderModule(key){
   await loadAccounts();
   if(key==='accounts'){const {data:oc}=await sb.from('cases').select('account_id,status');window.OPEN_KH=new Set((oc||[]).filter(c=>['Pending','Đang xử lý','Chờ support'].includes(c.status)).map(c=>c.account_id));}
   const canEdit=['SD','PA'].includes(ME.role);
-  const canAdd=canEdit||(key==='requests'&&ME.role==='SELLER'&&ME.seller_name);
+  const canAdd=canEdit||(['requests','cases'].includes(key)&&ME.role==='SELLER'&&ME.seller_name);
   const showAct=canEdit||key==='requests';
   $('pageArea').innerHTML=`
     <div class="topbar"><div><h1>${cfg.title}</h1><div class="sub">${cfg.sub}</div></div>
@@ -713,9 +712,10 @@ async function importXlsx(key,file){
       else if((f.t==='sel'||f.t==='cat')){const opts=f.t==='cat'?catOpts(f.cat):f.opts;if(v&&!opts.includes(String(v).trim()))errs.push(f.l+' ngoài danh mục');v=String(v).trim();}
       o[f.k]=v;
     });
-    // trùng khóa (chỉ check khi module có khóa và giá trị khóa không rỗng)
+    // trùng khóa — so chuẩn hóa (bỏ dấu cách, không phân biệt hoa/thường)
     if(cfg.key&&cfg.key.every(k=>String(o[k]??'').trim()!=='')){
-      const dup=existing.find(e=>cfg.key.every(k=>String(e[k]??'')===String(o[k]??'')));
+      const norm=v=>String(v??'').trim().toLowerCase();
+      const dup=existing.find(e=>cfg.key.every(k=>norm(e[k])===norm(o[k])));
       if(dup)o._dup=dup.id;
     }
     o._row=i+2;o._errs=errs;
@@ -737,23 +737,39 @@ async function importXlsx(key,file){
 $('impCommit').onclick=async()=>{
   const cfg=MODULES[IMP_KEY];const dupMode=$('impDupMode')?.value||'skip';
   const good=IMP_ROWS.filter(p=>!p._errs.length);
-  let ins=0,upd=0,skip=0;
+  let ins=0,upd=0,skip=0;const fails=[];
   $('impCommit').disabled=true;
   for(const p of good){
-    const payload={};cfg.fields.forEach(f=>{if(p[f.k]!==undefined)payload[f.k]=p[f.k];});
     if(p._dup){
       if(dupMode==='skip'){skip++;continue;}
-      if(cfg.table==='accounts')delete payload.status; // import không đổi trạng thái TK
-      const {error}=await sb.from(cfg.table).update(payload).eq('id',p._dup);if(!error)upd++;
+      // CẬP NHẬT ĐÈ: chỉ ghi đè ô có dữ liệu, KHÔNG xóa trắng ô để trống
+      const patch={};cfg.fields.forEach(f=>{if(p[f.k]!=null&&p[f.k]!=='')patch[f.k]=p[f.k];});
+      if(cfg.table==='accounts')delete patch.status; // import không đổi trạng thái TK
+      delete patch[cfg.key[0]];delete patch[cfg.key[1]]; // không động vào khóa
+      const {error}=await sb.from(cfg.table).update(patch).eq('id',p._dup);
+      if(error)fails.push(`Dòng ${p._row}: ${error.message}`);else upd++;
     }else{
-      Object.keys(payload).forEach(k=>{if(payload[k]==null)delete payload[k];});
+      const payload={};cfg.fields.forEach(f=>{if(p[f.k]!=null&&p[f.k]!=='')payload[f.k]=p[f.k];});
       if(cfg.userCol)payload[cfg.userCol]=ME.id;
-      const {error}=await sb.from(cfg.table).insert(payload);if(!error)ins++;
+      const {error}=await sb.from(cfg.table).insert(payload);
+      if(error){
+        if(error.code==='23505')fails.push(`Dòng ${p._row}: trùng dữ liệu (DB chặn) — chọn "Cập nhật đè" để ghi đè`);
+        else fails.push(`Dòng ${p._row}: ${error.message}`);
+      }else ins++;
     }
   }
-  await logAct('Nhập Excel',cfg.table,cfg.title,`thêm ${ins}, cập nhật ${upd}, bỏ qua ${skip}`);
-  $('impModal').classList.remove('show');$('impCommit').disabled=false;
-  toast(`Nhập xong: +${ins} mới, ${upd} cập nhật, ${skip} bỏ qua`);
+  await logAct('Nhập Excel',cfg.table,cfg.title,`thêm ${ins}, cập nhật ${upd}, bỏ qua ${skip}, lỗi ${fails.length}`);
+  $('impCommit').disabled=false;
+  if(fails.length){
+    $('impInfo').innerHTML='';
+    $('impBody').innerHTML=`<div style="margin-bottom:10px"><b style="color:var(--green)">+${ins} mới</b> · <b>${upd} cập nhật</b> · ${skip} bỏ qua · <b style="color:var(--red)">${fails.length} lỗi</b></div>
+      <div class="card" style="background:rgba(240,106,106,.08);border-color:rgba(240,106,106,.3)"><b style="color:var(--red)">Các dòng lỗi (chưa nhập):</b>
+      <ul style="margin:8px 0 0 18px;font-size:12.5px;line-height:1.7">${fails.slice(0,40).map(f=>`<li>${esc(f)}</li>`).join('')}</ul></div>`;
+    toast(`Có ${fails.length} dòng lỗi — xem chi tiết trong bảng`);
+  }else{
+    $('impModal').classList.remove('show');
+    toast(`Nhập xong: +${ins} mới, ${upd} cập nhật, ${skip} bỏ qua`);
+  }
   renderModule(IMP_KEY);
 };
 
@@ -924,10 +940,10 @@ function drawExpChart(){
 
 /* ============ CẢNH BÁO ============ */
 async function computeAlerts(){
-  const [accR,caseR,reqR,proxR,toolR,llcR,cardR]=await Promise.all([
+  const [accR,caseR,reqR,proxR,toolR,llcR]=await Promise.all([
     sb.from('accounts').select('*'),sb.from('cases').select('*'),sb.from('account_requests').select('*'),
-    sb.from('proxies').select('*'),sb.from('tool_accounts').select('*'),sb.from('llcs').select('*'),sb.from('card_charges').select('*')]);
-  const accs=accR.data||[],cases=caseR.data||[],reqs=reqR.data||[],prox=proxR.data||[],tools=toolR.data||[],llcs=llcR.data||[],cards=cardR.data||[];
+    sb.from('proxies').select('*'),sb.from('tool_accounts').select('*'),sb.from('llcs').select('*')]);
+  const accs=accR.data||[],cases=caseR.data||[],reqs=reqR.data||[],prox=proxR.data||[],tools=toolR.data||[],llcs=llcR.data||[];
   const A=[];const D=(k,b)=>daysBetween(b||todayStr(),k);
   accs.forEach(a=>{if(['Die','Suspend'].includes(a.status)&&a.status_changed_at&&daysBetween(a.status_changed_at)<=1)A.push({lv:'hi',ic:'🔴',t:`TK ${a.name} chuyển ${a.status} trong 24h`,w:`seller ${a.seller} · lỗi ${a.error_type||'?'}`});
     if(['Die','Suspend'].includes(a.status)&&num(a.onhold_usd)>500)A.push({lv:'hi',ic:'🔴',t:`TK ${a.name} khóa — $${fmtUsd(a.onhold_usd)} on-hold`,w:`seller ${a.seller}`});});
@@ -941,7 +957,6 @@ async function computeAlerts(){
   accs.forEach(a=>{if(a.warranty_end){const d=D(a.warranty_end);if(d>=0&&d<=5)A.push({lv:'mid',ic:'🟠',t:`TK ${a.name} hết bảo hành trong ${d} ngày`,w:`seller ${a.seller}`});}
     if(a.phone_change_due){const d=D(a.phone_change_due);if(d>=0&&d<=7)A.push({lv:'lo',ic:'🟡',t:`TK ${a.name} đến hạn thay phone trong ${d} ngày`,w:''});}});
   llcs.forEach(l=>{if(l.end_date){const d=D(l.end_date);if(d>=0&&d<=30)A.push({lv:'lo',ic:'🟡',t:`LLC ${l.llc_name} hết hạn trong ${d} ngày`,w:l.owner_name});}});
-  cards.forEach(c=>{if(num(c.balance_vnd)>0&&num(c.balance_vnd)<1200000)A.push({lv:'lo',ic:'🟡',t:`Thẻ charge ${c.person} số dư thấp: ${fmtVnd(c.balance_vnd)}₫`,w:c.period_label});});
   try{
     const {data:snaps}=await sb.from('weekly_snapshots').select('*').order('week_start');
     const wk=mondayOf(new Date());const prev=(snaps||[]).filter(s=>s.week_start<wk).pop();
