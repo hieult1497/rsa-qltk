@@ -176,7 +176,7 @@
 <!-- APP -->
 <div class="app" id="app" style="display:none">
   <aside class="side collapsed" id="side">
-    <div class="logo"><div class="dot">R</div><div><b>RSA QLTK</b><small>RS Agency · v1.6</small></div>
+    <div class="logo"><div class="dot">R</div><div><b>RSA QLTK</b><small>RS Agency · v1.7</small></div>
       <button class="hamb" id="hamb">☰</button></div>
     <div class="user"><div class="av" id="uAv">?</div><div><b id="uName">—</b><small id="uRole">—</small></div>
       <div style="margin-left:auto;display:flex;gap:8px"><div class="out" id="btnTheme" title="Đổi màu">◐</div><div class="out" id="btnOut" title="Đăng xuất">⎋</div></div></div>
@@ -477,10 +477,13 @@ async function renderModule(key){
   if(key==='accounts'){const {data:oc}=await sb.from('cases').select('account_id,status');window.OPEN_KH=new Set((oc||[]).filter(c=>['Pending','Đang xử lý','Chờ support'].includes(c.status)).map(c=>c.account_id));}
   const canEdit=['SD','PA'].includes(ME.role);
   const canAdd=canEdit||(['requests','cases'].includes(key)&&ME.role==='SELLER'&&ME.seller_name);
+  const canDel=['SD','PA'].includes(ME.role);
   const showAct=canEdit||key==='requests';
+  SEL=new Set();
   $('pageArea').innerHTML=`
     <div class="topbar"><div><h1>${cfg.title}</h1><div class="sub">${cfg.sub}</div></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${canDel?`<button class="btn danger sm" id="bulkDel" style="display:none" onclick="deleteSelected('${key}')">🗑 Xóa đã chọn (<span id="selCnt">0</span>)</button>`:''}
         <button class="btn ghost sm" onclick="tplXlsx('${key}')">⤓ Form mẫu</button>
         ${canEdit?`<button class="btn ghost sm" onclick="$('impFile').click()">⤴ Nhập Excel</button>`:''}
         <button class="btn ghost sm" onclick="exportXlsx('${key}')">⇩ Xuất Excel</button>
@@ -495,7 +498,7 @@ async function renderModule(key){
       ${(cfg.filters||cfg.sellerScope||key==='expenses')?`<button class="btn ghost sm" onclick="clearModFilters('${key}')">Xóa lọc</button>`:''}
       <span class="cnt" id="modCount"></span></div>
     <div class="card" style="padding:0"><div class="tbl-wrap"><table>
-      <thead><tr>${cfg.cols.map(c=>`<th>${colLabel(cfg,c)}</th>`).join('')}${showAct?'<th></th>':''}</tr></thead>
+      <thead><tr>${canDel?'<th style="width:30px"><input type="checkbox" id="selAll" onclick="toggleAll(\''+key+'\',this.checked)"></th>':''}${cfg.cols.map(c=>`<th>${colLabel(cfg,c)}</th>`).join('')}${showAct?'<th></th>':''}</tr></thead>
       <tbody id="modBody"></tbody></table>
       <div class="empty" id="modEmpty" style="display:none">Chưa có dữ liệu. ${canEdit?'Bấm "+ Thêm" hoặc Nhập Excel.':''}</div>
     </div></div>`;
@@ -539,9 +542,34 @@ function paintRows(key){
   const showAct=canEdit||key==='requests';
   let cnt=rows.length+' dòng';
   if(cfg.money){cnt+=' · tổng '+fmtVnd(rows.reduce((a,r)=>a+num(r[cfg.money]),0))+'₫';}
+  const canDel=['SD','PA'].includes(ME.role);
+  if(canDel)cnt+=' · đã chọn '+SEL.size;
   $('modCount').textContent=cnt;
   $('modEmpty').style.display=rows.length?'none':'block';
-  $('modBody').innerHTML=rows.map(r=>`<tr>${cfg.cols.map(c=>`<td>${cellVal(cfg,r,c)}</td>`).join('')}${showAct?`<td style="text-align:right;white-space:nowrap">${rowActs(key,r,canEdit)}</td>`:''}</tr>`).join('');
+  $('modBody').innerHTML=rows.map(r=>`<tr>${canDel?`<td><input type="checkbox" class="rowSel" ${SEL.has(r.id)?'checked':''} onclick="toggleSel('${key}',${r.id},this.checked)"></td>`:''}${cfg.cols.map(c=>`<td>${cellVal(cfg,r,c)}</td>`).join('')}${showAct?`<td style="text-align:right;white-space:nowrap">${rowActs(key,r,canEdit)}</td>`:''}</tr>`).join('');
+  updateBulkBar();
+}
+let SEL=new Set();
+function toggleSel(key,id,on){if(on)SEL.add(id);else SEL.delete(id);updateBulkBar();}
+function toggleAll(key,on){
+  // chọn/bỏ mọi dòng đang hiển thị (sau khi đã lọc)
+  const ids=[...document.querySelectorAll('#modBody .rowSel')].map(cb=>Number(cb.getAttribute('onclick').match(/,(\d+),/)[1]));
+  SEL=new Set(on?ids:[]);
+  paintRows(key);
+}
+function updateBulkBar(){
+  const b=$('bulkDel');if(!b)return;
+  b.style.display=SEL.size?'inline-block':'none';
+  if($('selCnt'))$('selCnt').textContent=SEL.size;
+}
+async function deleteSelected(key){
+  const cfg=MODULES[key];const ids=[...SEL];
+  if(!ids.length)return;
+  if(!confirm(`Xóa ${ids.length} dòng đã chọn? Không khôi phục được.`))return;
+  const {error}=await sb.from(cfg.table).delete().in('id',ids);
+  if(error)return toast('Lỗi: '+error.message);
+  await logAct('Xóa hàng loạt',cfg.table,ids.length+' dòng','');
+  SEL=new Set();toast('Đã xóa '+ids.length+' dòng ✓');renderModule(key);
 }
 function rowActs(key,r,canEdit){
   let h='';
@@ -551,7 +579,7 @@ function rowActs(key,r,canEdit){
   }
   if(key==='accounts'&&canEdit)h+=`<button class="btn sm" onclick="openQuickTT(${r.id})">Đổi TT</button> `;
   if(canEdit)h+=`<button class="btn ghost sm" onclick="openForm('${key}',${r.id})">Sửa</button> `;
-  if(ME.role==='SD')h+=`<button class="btn danger sm" onclick="delRow('${key}',${r.id})">Xóa</button>`;
+  if(['SD','PA'].includes(ME.role))h+=`<button class="btn danger sm" onclick="delRow('${key}',${r.id})">Xóa</button>`;
   return h;
 }
 function badge(cfg,field,val){const b=cfg.badges&&cfg.badges[field]&&cfg.badges[field][val];return `<span class="chip ${b||'mut'}">${esc(val||'—')}</span>`;}
