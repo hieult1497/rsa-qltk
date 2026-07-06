@@ -176,7 +176,7 @@
 <!-- APP -->
 <div class="app" id="app" style="display:none">
   <aside class="side collapsed" id="side">
-    <div class="logo"><div class="dot">R</div><div><b>RSA QLTK</b><small>RS Agency · v1.7</small></div>
+    <div class="logo"><div class="dot">R</div><div><b>RSA QLTK</b><small>RS Agency · v1.8</small></div>
       <button class="hamb" id="hamb">☰</button></div>
     <div class="user"><div class="av" id="uAv">?</div><div><b id="uName">—</b><small id="uRole">—</small></div>
       <div style="margin-left:auto;display:flex;gap:8px"><div class="out" id="btnTheme" title="Đổi màu">◐</div><div class="out" id="btnOut" title="Đăng xuất">⎋</div></div></div>
@@ -542,6 +542,7 @@ function paintRows(key){
   const showAct=canEdit||key==='requests';
   let cnt=rows.length+' dòng';
   if(cfg.money){cnt+=' · tổng '+fmtVnd(rows.reduce((a,r)=>a+num(r[cfg.money]),0))+'₫';}
+  if(key==='accounts'){const h=rows.reduce((a,r)=>a+num(r.onhold_usd),0),b=rows.reduce((a,r)=>a+num(r.balance_usd),0);if(h||b)cnt+=` · on-hold $${fmtUsd(h)} · balance $${fmtUsd(b)}`;}
   const canDel=['SD','PA'].includes(ME.role);
   if(canDel)cnt+=' · đã chọn '+SEL.size;
   $('modCount').textContent=cnt;
@@ -820,7 +821,10 @@ async function renderDash(){
     </div>
     <div class="grid" style="grid-template-columns:1fr 1fr;margin-top:14px">
       <div class="card"><h3>Case kháng <span class="tag">đang tồn</span></h3><div id="caseBox"></div></div>
-      <div class="card"><h3>Tài chính <span class="tag">VND & USD tách riêng</span></h3><div id="finBox"></div></div>
+      <div class="card"><h3>Tài chính <span class="tag">VND & USD tách riêng · bấm số xem TK</span></h3><div id="finBox"></div></div>
+    </div>
+    <div class="grid" style="grid-template-columns:1fr;margin-top:14px">
+      <div class="card"><h3>Tiền treo (on-hold) theo TK <span class="tag" id="holdTag">tiền đang bị sàn giữ</span></h3><div id="holdBox" class="tbl-wrap"></div></div>
     </div>
     <div class="grid" style="grid-template-columns:1.4fr 1fr;margin-top:14px">
       <div class="card"><h3>Chi phí theo nhóm <span class="tag">theo bộ lọc chung ở đầu trang</span></h3><canvas id="expChart" style="max-height:220px"></canvas><div class="empty" id="expChartEmpty" style="display:none">Chưa có chi phí trong kỳ đang lọc.</div></div>
@@ -886,16 +890,23 @@ async function renderDash(){
   // finance
   const balUsd=accs.filter(a=>a.status==='Active').reduce((s,a)=>s+num(a.balance_usd),0);
   const holdUsd=accs.reduce((s,a)=>s+num(a.onhold_usd),0);
-  const lostUsd=accs.filter(a=>a.status==='Die').reduce((s,a)=>s+num(a.balance_usd),0);
+  const holdRisk=accs.filter(a=>['Die','Suspend'].includes(a.status)).reduce((s,a)=>s+num(a.onhold_usd),0);
+  const negUsd=accs.reduce((s,a)=>s+num(a.negative_usd),0);
+  const lostUsd=accs.filter(a=>a.status==='Die').reduce((s,a)=>s+num(a.balance_usd)+num(a.onhold_usd),0);
   const now=new Date(),m=now.getMonth(),y=now.getFullYear();
   const expMonth=exps.filter(e=>{const d=new Date(e.expense_date);return d.getMonth()===m&&d.getFullYear()===y;}).reduce((s,e)=>s+num(e.amount_vnd),0);
   const expAll=exps.reduce((s,e)=>s+num(e.amount_vnd),0);
-  $('finBox').innerHTML=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px">
-    <div><div class="label muted">Balance active</div><b>$${fmtUsd(balUsd)}</b></div>
-    <div><div class="label muted">On-hold</div><b>$${fmtUsd(holdUsd)}</b></div>
-    <div><div class="label muted">Mất do Die</div><b style="color:var(--red)">$${fmtUsd(lostUsd)}</b></div>
+  $('finBox').innerHTML=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px">
+    <div class="lnk" onclick="dashDrill('bal_active')"><div class="label muted">Balance active</div><b>$${fmtUsd(balUsd)}</b></div>
+    <div class="lnk" onclick="dashDrill('hold_all')"><div class="label muted">On-hold tổng</div><b>$${fmtUsd(holdUsd)}</b></div>
+    <div class="lnk" onclick="dashDrill('hold_risk')"><div class="label muted">On-hold ở TK khóa <span class="chip red" style="font-size:9px">nguy cơ mất</span></div><b style="color:var(--red)">$${fmtUsd(holdRisk)}</b></div>
+    <div class="lnk" onclick="dashDrill('neg')"><div class="label muted">Negative balance (nợ)</div><b style="color:var(--amber)">$${fmtUsd(negUsd)}</b></div>
     <div><div class="label muted">Chi tháng này</div><b>${fmtVnd(expMonth)}₫</b></div>
     <div><div class="label muted">Chi từ đầu</div><b>${fmtVnd(expAll)}₫</b></div></div>`;
+  // Tiền treo theo TK — bảng chi tiết, sắp theo on-hold giảm dần
+  const holdRows=accs.filter(a=>num(a.onhold_usd)>0).sort((x,y)=>num(y.onhold_usd)-num(x.onhold_usd));
+  $('holdTag').textContent=holdRows.length+' TK có tiền treo · tổng $'+fmtUsd(holdUsd);
+  $('holdBox').innerHTML=holdRows.length?`<table><thead><tr><th>TK</th><th>Sàn</th><th>Seller</th><th>Trạng thái</th><th class="num">On-hold ($)</th><th class="num">Balance ($)</th><th>Rút được?</th></tr></thead><tbody>${holdRows.map(a=>{const risk=['Die','Suspend'].includes(a.status);return `<tr><td>${esc(a.name)}</td><td>${a.platform}</td><td>${esc(a.seller)}</td><td>${badge(MODULES.accounts,'status',a.status)}</td><td class="num"><b style="${risk?'color:var(--red)':''}">${fmtUsd(a.onhold_usd)}</b></td><td class="num">${fmtUsd(a.balance_usd)}</td><td>${risk?'<span class="chip red">TK khóa — cần xử</span>':'<span class="chip green">TK sống</span>'}</td></tr>`;}).join('')}</tbody></table>`:'<div class="empty">Chưa có TK nào có tiền treo. Nhập cột On-hold ở bảng Tài khoản để theo dõi.</div>';
   // chi phí theo nhóm
   window._exps=exps;drawExpChart();
   // pipeline
@@ -919,10 +930,16 @@ function dashDrill(code,val){
   else if(code==='sel_all'){list=A.filter(x=>x.seller===val);title=val+' · Tất cả TK';}
   else if(code==='src_a'){list=A.filter(x=>x.source===val&&ACT(x));title='Nguồn '+val+' · Active';}
   else if(code==='src_all'){list=A.filter(x=>x.source===val);title='Nguồn '+val+' · Tất cả';}
-  $('drillTitle').textContent=title+' — '+list.length+' TK';
+  else if(code==='bal_active'){list=A.filter(x=>ACT(x)&&num(x.balance_usd)>0).sort((a,b)=>num(b.balance_usd)-num(a.balance_usd));title='TK active có balance';}
+  else if(code==='hold_all'){list=A.filter(x=>num(x.onhold_usd)>0).sort((a,b)=>num(b.onhold_usd)-num(a.onhold_usd));title='TK có tiền treo on-hold';}
+  else if(code==='hold_risk'){list=A.filter(x=>DEAD(x)&&num(x.onhold_usd)>0).sort((a,b)=>num(b.onhold_usd)-num(a.onhold_usd));title='Tiền treo ở TK khóa — nguy cơ mất';}
+  else if(code==='neg'){list=A.filter(x=>num(x.negative_usd)>0).sort((a,b)=>num(b.negative_usd)-num(a.negative_usd));title='TK có negative balance (nợ)';}
+  const money=['bal_active','hold_all','hold_risk','neg'].includes(code);
+  const sumHold=list.reduce((s,a)=>s+num(a.onhold_usd),0),sumBal=list.reduce((s,a)=>s+num(a.balance_usd),0),sumNeg=list.reduce((s,a)=>s+num(a.negative_usd),0);
+  $('drillTitle').textContent=title+' — '+list.length+' TK'+(money?` · on-hold $${fmtUsd(sumHold)} · balance $${fmtUsd(sumBal)}`:'');
   $('drillBody').innerHTML=list.length?
-    `<table><thead><tr><th>Tên TK</th><th>Sàn</th><th>Seller</th><th>Trạng thái</th><th>Nguồn</th><th>Lỗi</th></tr></thead><tbody>${
-      list.map(a=>`<tr><td>${esc(a.name)}</td><td>${a.platform}</td><td>${esc(a.seller)}</td><td>${badge(MODULES.accounts,'status',a.status)}</td><td>${esc(a.source||'')}</td><td class="muted">${esc((a.error_type||'').slice(0,30))}</td></tr>`).join('')
+    `<table><thead><tr><th>Tên TK</th><th>Sàn</th><th>Seller</th><th>Trạng thái</th>${money?'<th class="num">On-hold ($)</th><th class="num">Balance ($)</th>':'<th>Nguồn</th><th>Lỗi</th>'}</tr></thead><tbody>${
+      list.map(a=>`<tr><td>${esc(a.name)}</td><td>${a.platform}</td><td>${esc(a.seller)}</td><td>${badge(MODULES.accounts,'status',a.status)}</td>${money?`<td class="num"><b>${fmtUsd(a.onhold_usd)}</b></td><td class="num">${fmtUsd(a.balance_usd)}</td>`:`<td>${esc(a.source||'')}</td><td class="muted">${esc((a.error_type||'').slice(0,30))}</td>`}</tr>`).join('')
     }</tbody></table><div style="margin-top:12px;text-align:right"><button class="btn ghost sm" onclick="$('drillModal').classList.remove('show');go('accounts')">Mở trang Tài khoản ›</button></div>`
     :'<div class="empty">Không có TK nào trong nhóm này.</div>';
   $('drillModal').classList.add('show');
