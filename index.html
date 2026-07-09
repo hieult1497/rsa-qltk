@@ -176,7 +176,7 @@
 <!-- APP -->
 <div class="app" id="app" style="display:none">
   <aside class="side collapsed" id="side">
-    <div class="logo"><div class="dot">R</div><div><b>RSA QLTK</b><small>RS Agency · v1.8</small></div>
+    <div class="logo"><div class="dot">R</div><div><b>RSA QLTK</b><small>RS Agency · v1.9</small></div>
       <button class="hamb" id="hamb">☰</button></div>
     <div class="user"><div class="av" id="uAv">?</div><div><b id="uName">—</b><small id="uRole">—</small></div>
       <div style="margin-left:auto;display:flex;gap:8px"><div class="out" id="btnTheme" title="Đổi màu">◐</div><div class="out" id="btnOut" title="Đăng xuất">⎋</div></div></div>
@@ -220,7 +220,7 @@ const SUPABASE_KEY='sb_publishable_UW_EwaozbQ_ZiI4-COHFKg_yPOTKT5A';
 const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 let ME=null, CACHE={}, CATS={}, ACCOUNTS=[], PERMS={};
 let DF={seller:'',plat:'',src:'',period:'all',from:'',to:''}; // bộ lọc chung của Tổng quan
-const ROLE_LABEL={SD:'SD',QL:'Leader',PA:'Quản lý tài khoản',SELLER:'Seller',PENDING:'Chờ duyệt'};
+const ROLE_LABEL={SD:'SD',QL:'Leader',PA:'Quản lý tài khoản',SELLER:'Seller',FFM:'Media',PENDING:'Chờ duyệt'};
 const rlabel=r=>ROLE_LABEL[r]||r;
 
 /* ============ TIỆN ÍCH ============ */
@@ -279,6 +279,7 @@ async function boot(){
   await loadMenuPerms();
   buildNav();
   go('dash');
+  refreshNotiBadge();
 }
 function show(w){$('login').classList.toggle('hide',w!=='login');$('pending').classList.toggle('hide',w!=='pending');$('app').style.display=w==='app'?'flex':'none';}
 
@@ -420,11 +421,12 @@ const MODULES={
 /* ============ MENU ============ */
 const NAV=[
   {sec:'TỔNG QUAN'},
-  {key:'dash',ic:'▦',label:'Tổng quan',roles:['SD','QL','PA','SELLER']},
-  {key:'alerts',ic:'⚠',label:'Cảnh báo',roles:['SD','QL','PA'],bell:'navAlerts'},
+  {key:'dash',ic:'▦',label:'Tổng quan',roles:['SD','QL','PA','SELLER','FFM']},
+  {key:'noti',ic:'🔔',label:'Thông báo',roles:['SD','QL','PA','SELLER','FFM'],bell:'navNoti'},
+  {key:'alerts',ic:'⚠',label:'Cảnh báo',roles:['SD','QL','PA','FFM'],bell:'navAlerts'},
   {sec:'TÀI KHOẢN'},
-  {key:'accounts',ic:'▤',label:'Tài khoản',roles:['SD','QL','PA','SELLER']},
-  {key:'cases',ic:'⚖',label:'Case kháng',roles:['SD','QL','PA','SELLER']},
+  {key:'accounts',ic:'▤',label:'Tài khoản',roles:['SD','QL','PA','SELLER','FFM']},
+  {key:'cases',ic:'⚖',label:'Case kháng',roles:['SD','QL','PA','SELLER','FFM']},
   {key:'requests',ic:'✉',label:'Yêu cầu cấp TK',roles:['SD','QL','PA','SELLER']},
   {key:'pipeline',ic:'⛓',label:'Pipeline TK mới',roles:['SD','QL','PA']},
   {sec:'TÀI NGUYÊN & TÀI SẢN'},
@@ -441,7 +443,7 @@ const NAV=[
   {key:'perms',ic:'⚑',label:'Phân quyền',roles:['SD']},
   {key:'cats',ic:'≣',label:'Danh mục',roles:['SD','PA']},
   {key:'log',ic:'❏',label:'Nhật ký',roles:['SD']},
-  {key:'profile',ic:'☺',label:'Hồ sơ',roles:['SD','QL','PA','SELLER']},
+  {key:'profile',ic:'☺',label:'Hồ sơ',roles:['SD','QL','PA','SELLER','FFM']},
 ];
 function buildNav(){
   $('nav').innerHTML=NAV.map(n=>{
@@ -454,6 +456,7 @@ function setActive(key){document.querySelectorAll('.nav a').forEach(a=>a.classLi
 async function go(key){
   setActive(key);
   if(key==='dash')return renderDash();
+  if(key==='noti')return renderNoti();
   if(key==='alerts')return renderAlerts();
   if(key==='perms')return renderPerms();
   if(key==='cats')return renderCats();
@@ -478,7 +481,8 @@ async function renderModule(key){
   const canEdit=['SD','PA'].includes(ME.role);
   const canAdd=canEdit||(['requests','cases'].includes(key)&&ME.role==='SELLER'&&ME.seller_name);
   const canDel=['SD','PA'].includes(ME.role);
-  const showAct=canEdit||key==='requests';
+  const sellerReport=key==='accounts'&&ME.role==='SELLER';
+  const showAct=canEdit||key==='requests'||sellerReport;
   SEL=new Set();
   $('pageArea').innerHTML=`
     <div class="topbar"><div><h1>${cfg.title}</h1><div class="sub">${cfg.sub}</div></div>
@@ -539,7 +543,7 @@ function paintRows(key){
   if(df)rows=rows.filter(r=>(r.expense_date||'')>=df);
   if(dt)rows=rows.filter(r=>(r.expense_date||'')<=dt);
   const canEdit=['SD','PA'].includes(ME.role);
-  const showAct=canEdit||key==='requests';
+  const showAct=canEdit||key==='requests'||(key==='accounts'&&ME.role==='SELLER');
   let cnt=rows.length+' dòng';
   if(cfg.money){cnt+=' · tổng '+fmtVnd(rows.reduce((a,r)=>a+num(r[cfg.money]),0))+'₫';}
   if(key==='accounts'){const h=rows.reduce((a,r)=>a+num(r.onhold_usd),0),b=rows.reduce((a,r)=>a+num(r.balance_usd),0);if(h||b)cnt+=` · on-hold $${fmtUsd(h)} · balance $${fmtUsd(b)}`;}
@@ -579,6 +583,7 @@ function rowActs(key,r,canEdit){
     if(r.approval_status==='Đã duyệt'&&r.issue_status==='Chưa'&&canEdit)h+=`<button class="btn sm" onclick="openIssue(${r.id})">Cấp TK</button> `;
   }
   if(key==='accounts'&&canEdit)h+=`<button class="btn sm" onclick="openQuickTT(${r.id})">Đổi TT</button> `;
+  if(key==='accounts'&&ME.role==='SELLER')h+=`<button class="btn danger sm" onclick="openReport(${r.id})">⚠ Báo lỗi</button> `;
   if(canEdit)h+=`<button class="btn ghost sm" onclick="openForm('${key}',${r.id})">Sửa</button> `;
   if(['SD','PA'].includes(ME.role))h+=`<button class="btn danger sm" onclick="delRow('${key}',${r.id})">Xóa</button>`;
   return h;
@@ -643,6 +648,14 @@ $('modalSave').onclick=async()=>{
     await logAct('Cấp TK','account_requests',FORM_ID,patch.issue_status);
     toast('Đã ghi nhận cấp TK ✓');closeModal();FORM_MODE=null;renderModule('requests');return;
   }
+  if(FORM_MODE==='report'){
+    const loai=$('ff_rep_type').value,note=$('ff_rep_note').value.trim();
+    const acc=(MOD_STATE['accounts']||[]).find(x=>x.id===FORM_ID);
+    const {error}=await sb.from('cases').insert({account_id:FORM_ID,error_type:loai,status:'Pending',date_start:todayStr(),note:note||null,created_by:ME.id});
+    if(error){$('modalErr').textContent='Lỗi: '+error.message;return;}
+    await logAct('Seller báo lỗi','cases',acc?acc.name:FORM_ID,loai);
+    toast('Đã gửi báo lỗi ✓ Quản lý TK và Media sẽ nhận thông báo');closeModal();FORM_MODE=null;renderModule('accounts');return;
+  }
   const cfg=MODULES[FORM_CFG];const out={};
   for(const f of cfg.fields){
     if(f.sensitive&&ME.role==='SELLER')continue;
@@ -693,6 +706,17 @@ async function reqApprove(id,ok){
   if(error)return toast('Lỗi: '+error.message);
   await logAct(ok?'Duyệt cấp TK':'Từ chối cấp TK','account_requests',id,'');
   toast(ok?'Đã duyệt ✓':'Đã từ chối');renderModule('requests');
+}
+function openReport(id){
+  const r=(MOD_STATE['accounts']||[]).find(x=>x.id===id);if(!r)return;
+  FORM_CFG='accounts';FORM_ID=id;FORM_MODE='report';
+  $('modalTitle').textContent='Báo lỗi TK — '+r.name;
+  $('modalErr').textContent='';
+  $('modalBody').innerHTML=`
+    <div class="fld"><label>Loại lỗi <span class="req">*</span></label><select id="ff_rep_type"><option>Khóa</option><option>Limit</option><option>Suspend</option><option>Lỗi khác</option></select></div>
+    <div class="fld full"><label>Mô tả (không bắt buộc)</label><textarea id="ff_rep_note" rows="2" placeholder="Ví dụ: shop bị limit 0 order từ sáng nay"></textarea></div>
+    <div class="fld full muted" style="font-size:12px">Gửi đi sẽ tạo 1 case và báo cho Quản lý tài khoản + Media. Trạng thái TK do Quản lý tài khoản xác nhận sau.</div>`;
+  $('modal').classList.add('show');
 }
 function openIssue(id){
   FORM_CFG='requests';FORM_ID=id;FORM_MODE='issue';
@@ -983,6 +1007,62 @@ function drawExpChart(){
     }}]});
 }
 
+/* ============ THÔNG BÁO (feed chéo bộ phận, suy từ cases + status_log + requests) ============ */
+async function buildNotiItems(){
+  const [caseR,logR,reqR,accR]=await Promise.all([
+    sb.from('cases').select('id,account_id,seller,error_type,status,created_at,created_by').order('created_at',{ascending:false}).limit(60),
+    sb.from('account_status_log').select('id,account_id,old_status,new_status,changed_by_name,changed_at').order('changed_at',{ascending:false}).limit(60),
+    sb.from('account_requests').select('*').order('id',{ascending:false}).limit(60),
+    sb.from('accounts').select('id,name,platform,seller')]);
+  const accMap={};(accR.data||[]).forEach(a=>accMap[a.id]=a);
+  const nm=id=>{const a=accMap[id];return a?a.name+' ('+a.platform+')':'TK #'+id;};
+  const items=[];const r=ME.role;
+  const since=Date.now()-30*86400000;
+  // 1) CASE — seller báo lỗi / case mới. Bộ phận nhận: PA, Media, SD, QL + seller chủ TK
+  (caseR.data||[]).forEach(c=>{
+    if(new Date(c.created_at).getTime()<since)return;
+    const care=['SD','QL','PA','FFM','SELLER'];if(!care.includes(r))return;
+    items.push({key:'case:'+c.id,ic:'⚠',lv:['Thất bại','Dừng'].includes(c.status)?'hi':'mid',
+      t:`Báo lỗi TK ${nm(c.account_id)}`,w:`${c.seller||''} · ${c.error_type||''} · ${c.status}`,ts:c.created_at});
+  });
+  // 2) LOG đổi trạng thái. Media + Seller + PA/QL/SD
+  (logR.data||[]).forEach(l=>{
+    if(new Date(l.changed_at).getTime()<since)return;
+    const risk=['Die','Suspend'].includes(l.new_status);
+    if(r==='FFM'&&!risk&&l.new_status!=='Active')return; // Media chỉ quan tâm khóa/hồi
+    items.push({key:'slog:'+l.id,ic:risk?'🔴':(l.new_status==='Active'?'🟢':'🔵'),lv:risk?'hi':'lo',
+      t:`TK ${nm(l.account_id)}: ${l.old_status||'?'} → ${l.new_status}`,
+      w:risk?(r==='FFM'?'Media dừng làm video kênh này':'Cần xử lý'):(l.new_status==='Active'?'TK hoạt động lại':''),
+      by:l.changed_by_name,ts:l.changed_at});
+  });
+  // 3) YÊU CẦU CẤP TK. created→PA/QL/SD ; quyết định/cấp→Seller + PA
+  (reqR.data||[]).forEach(q=>{
+    const created=q.created_at||q.request_date;
+    if(created&&new Date(created).getTime()>=since&&['SD','QL','PA'].includes(r))
+      items.push({key:'reqnew:'+q.id,ic:'✉',lv:'lo',t:`Yêu cầu cấp TK: ${q.seller}`,w:`${q.account_type} · ${q.reason||''}`,ts:created});
+    if(q.approval_status&&q.approval_status!=='Chờ duyệt'&&q.approved_at){
+      if(['SD','QL','PA','SELLER'].includes(r))
+        items.push({key:'reqdec:'+q.id+':'+q.approval_status,ic:q.approval_status==='Đã duyệt'?'✅':'❌',lv:'lo',
+          t:`Yêu cầu của ${q.seller} · ${q.approval_status}`,w:q.reject_reason||q.account_type,ts:q.approved_at});
+    }
+    if(q.issue_status==='Đã cấp'&&['SELLER','PA'].includes(r))
+      items.push({key:'reqiss:'+q.id,ic:'🎁',lv:'lo',t:`Đã cấp TK cho ${q.seller}`,w:q.issued_date||'',ts:q.issued_date||q.approved_at});
+  });
+  items.sort((a,b)=>new Date(b.ts||0)-new Date(a.ts||0));
+  return items;
+}
+async function renderNoti(){
+  $('pageArea').innerHTML=`<div class="topbar"><div><h1>Thông báo</h1><div class="sub">Việc liên quan bộ phận của bạn · 30 ngày gần nhất</div></div>
+    <button class="btn ghost sm" onclick="markAllNoti()">✓ Đánh dấu tất cả đã đọc</button></div><div id="notiList" class="muted">Đang tải...</div>`;
+  await loadSeen();const items=await buildNotiItems();window._notis=items;
+  $('notiList').innerHTML=items.length?items.map((a,i)=>`<div class="alert ${a.lv} ${SEEN.has(a.key)?'seen':''}" onclick="markNoti(this,${i})"><div class="ic">${a.ic}</div><div><b>${esc(a.t)}</b><div class="who">${esc(a.w||'')}${a.by?' · '+esc(a.by):''} · ${new Date(a.ts).toLocaleString('vi-VN')}</div></div>${SEEN.has(a.key)?'<span class="seen-tag">✓ đã đọc</span>':'<span class="who">mới</span>'}</div>`).join(''):'<div class="card empty">Chưa có thông báo nào.</div>';
+  updateNotiBadge(items);
+}
+async function markNoti(el,i){const a=(window._notis||[])[i];if(!a)return;SEEN.add(a.key);el.classList.add('seen');try{await sb.from('alert_seen').insert({alert_key:a.key.slice(0,300),user_id:ME.id});}catch(e){}updateNotiBadge(window._notis);}
+async function markAllNoti(){for(const a of (window._notis||[])){if(!SEEN.has(a.key)){SEEN.add(a.key);try{await sb.from('alert_seen').insert({alert_key:a.key.slice(0,300),user_id:ME.id});}catch(e){}}}renderNoti();toast('Đã đánh dấu tất cả đã đọc ✓');}
+function updateNotiBadge(items){const cnt=(items||[]).filter(a=>!SEEN.has(a.key)).length;const b=$('navNoti');if(b){b.textContent=cnt;b.style.display=cnt?'inline-block':'none';}}
+async function refreshNotiBadge(){try{await loadSeen();const items=await buildNotiItems();updateNotiBadge(items);}catch(e){}}
+
 /* ============ CẢNH BÁO ============ */
 async function computeAlerts(){
   const [accR,caseR,reqR,proxR,toolR,llcR]=await Promise.all([
@@ -1028,7 +1108,7 @@ async function renderAlerts(){
 async function markAllSeen(){for(const a of (window._alerts||[])){if(!SEEN.has(a.key)){SEEN.add(a.key);try{await sb.from('alert_seen').insert({alert_key:a.key.slice(0,300),user_id:ME.id});}catch(e){}}}renderAlerts();toast('Đã đánh dấu tất cả ✓');}
 
 /* ============ PHÂN QUYỀN ============ */
-const MATRIX_ROLES=[['QL','Leader'],['PA','Quản lý tài khoản'],['SELLER','Seller']];
+const MATRIX_ROLES=[['QL','Leader'],['PA','Quản lý tài khoản'],['FFM','Media'],['SELLER','Seller']];
 async function renderPerms(){
   const items=NAV.filter(n=>!n.sec&&n.key!=='perms'&&n.key!=='log');
   $('pageArea').innerHTML=`<div class="topbar"><div><h1>Phân quyền</h1><div class="sub">Duyệt người dùng · gán & đổi vai trò · khóa · quyền xem menu</div></div></div>
@@ -1047,7 +1127,7 @@ async function renderPerms(){
     <div class="card"><h3>Người dùng đã duyệt</h3><div id="apprList" class="muted">Đang tải...</div></div>`;
   const {data:profs}=await sb.from('profiles').select('*').order('created_at');
   const sellers=catOpts('seller');
-  const roleSel=p=>`<select id="role_${p.id}">${['SELLER','PA','QL','SD'].map(r=>`<option value="${r}" ${p.role===r?'selected':''}>${rlabel(r)}</option>`).join('')}</select>`;
+  const roleSel=p=>`<select id="role_${p.id}">${['SELLER','FFM','PA','QL','SD'].map(r=>`<option value="${r}" ${p.role===r?'selected':''}>${rlabel(r)}</option>`).join('')}</select>`;
   const sellerSel=p=>`<select id="seller_${p.id}"><option value="">— seller —</option>${sellers.map(s=>`<option ${p.seller_name===s?'selected':''}>${esc(s)}</option>`).join('')}</select>`;
   const pend=(profs||[]).filter(p=>p.status==='pending');
   $('pendList').innerHTML=pend.length?`<div class="tbl-wrap"><table><thead><tr><th>Họ tên</th><th>Email</th><th>Vai trò</th><th>Seller</th><th></th></tr></thead><tbody>${pend.map(p=>`<tr><td>${esc(p.full_name)}</td><td>${esc(p.email)}</td><td>${roleSel(p)}</td><td>${sellerSel(p)}</td><td><button class="btn sm" onclick="approveUser('${p.id}')">Duyệt</button></td></tr>`).join('')}</tbody></table></div>`:'Không có đăng ký chờ duyệt.';
