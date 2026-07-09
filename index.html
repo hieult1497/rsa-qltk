@@ -176,7 +176,7 @@
 <!-- APP -->
 <div class="app" id="app" style="display:none">
   <aside class="side collapsed" id="side">
-    <div class="logo"><div class="dot">R</div><div><b>RSA QLTK</b><small>RS Agency · v2.9</small></div>
+    <div class="logo"><div class="dot">R</div><div><b>RSA QLTK</b><small>RS Agency · v3.0</small></div>
       <button class="hamb" id="hamb">☰</button></div>
     <div class="user"><div class="av" id="uAv">?</div><div><b id="uName">—</b><small id="uRole">—</small></div>
       <div style="margin-left:auto;display:flex;gap:8px"><div class="out" id="btnTheme" title="Đổi màu">◐</div><div class="out" id="btnOut" title="Đăng xuất">⎋</div></div></div>
@@ -308,6 +308,7 @@ function menuAllowed(n,role){
 /* ============ ĐỊNH NGHĨA MODULE (engine config-driven) ============ */
 const PLAT=['TTS','AMZ','Etsy','Khác'];
 const ACC_STATUS=['Mới','Active','Suspend','Die','Thu hồi'];
+function accStatuses(){const c=catOpts('trang_thai_tk');return c.length?c:ACC_STATUS;}
 const MODULES={
   accounts:{table:'accounts',title:'Tài khoản',sub:'Bảng lõi · mỗi dòng = 1 TK. 7 trường bắt buộc, còn lại điền dần.',
     sellerScope:'seller', key:['email','platform'], userCol:'created_by',
@@ -317,7 +318,7 @@ const MODULES={
       {k:'email',l:'Email / ID',t:'text',req:1},
       {k:'seller',l:'Seller',t:'cat',cat:'seller',req:1},
       {k:'assigned_date',l:'Ngày cấp',t:'date',req:1},
-      {k:'status',l:'Trạng thái',t:'sel',opts:ACC_STATUS,req:1,noImportUpdate:1},
+      {k:'status',l:'Trạng thái',t:'cat',cat:'trang_thai_tk',req:1,noImportUpdate:1},
       {k:'source',l:'Nguồn TK',t:'cat',cat:'nguon_tk',req:1},
       {k:'acc_type',l:'Loại',t:'sel',opts:['PER','Business']},
       {k:'error_type',l:'Lỗi (nếu die/khóa)',t:'text'},
@@ -338,7 +339,7 @@ const MODULES={
       {k:'note',l:'Ghi chú',t:'textarea',full:1},
     ],
     cols:['name','platform','seller','status','subacc','source','warranty_end','balance_usd','onhold_usd','note'],
-    filters:[['platform','Tất cả sàn',()=>PLAT],['status','Tất cả trạng thái',()=>ACC_STATUS],['source','Tất cả nguồn',()=>catOpts('nguon_tk')],['browser','Mọi browser','data']],
+    filters:[['platform','Tất cả sàn',()=>PLAT],['status','Tất cả trạng thái',()=>accStatuses()],['source','Tất cả nguồn',()=>catOpts('nguon_tk')],['browser','Mọi browser','data']],
     badges:{status:{Active:'green',Die:'red',Suspend:'amber','Thu hồi':'mut','Mới':'blue'}}},
   sub_accounts:{table:'sub_accounts',title:'TK phân quyền (sub-account)',sub:'Tài khoản phụ do shop chính cấp để seller đăng nhập — không cần mật khẩu shop chính.',
     sellerScope:'granted_to', key:['account_id','login_id'], userCol:'created_by',
@@ -741,7 +742,7 @@ function openQuickTT(id){
   $('modalTitle').textContent='Đổi trạng thái — '+r.name;
   $('modalErr').textContent='';
   $('modalBody').innerHTML=`
-    <div class="fld"><label>Trạng thái mới <span class="req">*</span></label><select id="ff_status">${ACC_STATUS.map(s=>`<option ${r.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
+    <div class="fld"><label>Trạng thái mới <span class="req">*</span></label><select id="ff_status">${accStatuses().map(s=>`<option ${r.status===s?'selected':''}>${esc(s)}</option>`).join('')}</select></div>
     <div class="fld"><label>Lỗi (nếu Suspend/Die)</label><input id="ff_error_type" value="${esc(r.error_type||'')}"></div>`;
   $('modal').classList.add('show');
 }
@@ -1317,7 +1318,7 @@ async function saveUser(id){const role=$('role_'+id).value,seller=$('seller_'+id
 async function lockUser(id,lock){const {error}=await sb.from('profiles').update({status:lock?'locked':'approved'}).eq('id',id);if(error)return toast('Lỗi: '+error.message);await logAct(lock?'Khóa':'Mở','profiles',id,'');renderPerms();}
 
 /* ============ DANH MỤC ============ */
-const CAT_GROUPS=[['seller','Seller'],['nguon_tk','Nguồn TK'],['nhom_chi_phi','Nhóm chi phí'],['loai_loi','Loại lỗi'],['noi_mua','Nơi mua'],['loai_tool','Loại tool']];
+const CAT_GROUPS=[['seller','Seller'],['trang_thai_tk','Trạng thái TK'],['nguon_tk','Nguồn TK'],['nhom_chi_phi','Nhóm chi phí'],['loai_loi','Loại lỗi'],['noi_mua','Nơi mua'],['loai_tool','Loại tool']];
 let catGroup='seller';
 async function renderCats(){
   $('pageArea').innerHTML=`<div class="topbar"><div><h1>Danh mục</h1><div class="sub">Dropdown toàn hệ thống. Người nghỉ → Tắt, đừng xóa (giữ lịch sử).</div></div></div>
