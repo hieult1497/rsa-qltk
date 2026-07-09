@@ -176,7 +176,7 @@
 <!-- APP -->
 <div class="app" id="app" style="display:none">
   <aside class="side collapsed" id="side">
-    <div class="logo"><div class="dot">R</div><div><b>RSA QLTK</b><small>RS Agency · v2.1</small></div>
+    <div class="logo"><div class="dot">R</div><div><b>RSA QLTK</b><small>RS Agency · v2.4</small></div>
       <button class="hamb" id="hamb">☰</button></div>
     <div class="user"><div class="av" id="uAv">?</div><div><b id="uName">—</b><small id="uRole">—</small></div>
       <div style="margin-left:auto;display:flex;gap:8px"><div class="out" id="btnTheme" title="Đổi màu">◐</div><div class="out" id="btnOut" title="Đăng xuất">⎋</div></div></div>
@@ -333,7 +333,7 @@ const MODULES={
       {k:'nas_link',l:'Link NAS/Doc (info nhạy cảm)',t:'text',sensitive:1},
       {k:'note',l:'Ghi chú',t:'textarea',full:1},
     ],
-    cols:['name','platform','seller','status','source','warranty_end','balance_usd','onhold_usd','note'],
+    cols:['name','platform','seller','status','subacc','source','warranty_end','balance_usd','onhold_usd','note'],
     filters:[['platform','Tất cả sàn',()=>PLAT],['status','Tất cả trạng thái',()=>ACC_STATUS],['source','Tất cả nguồn',()=>catOpts('nguon_tk')],['browser','Mọi browser','data']],
     badges:{status:{Active:'green',Die:'red',Suspend:'amber','Thu hồi':'mut','Mới':'blue'}}},
   sub_accounts:{table:'sub_accounts',title:'TK phân quyền (sub-account)',sub:'Tài khoản phụ do shop chính cấp để seller đăng nhập — không cần mật khẩu shop chính.',
@@ -341,15 +341,14 @@ const MODULES={
     fields:[
       {k:'account_id',l:'Shop chính',t:'acc',req:1},
       {k:'login_id',l:'Email / ID đăng nhập phụ',t:'text',req:1},
-      {k:'perm_level',l:'Mức quyền',t:'sel',opts:['Admin','Nhân viên','Chỉ xem','Khác']},
       {k:'granted_to',l:'Cấp cho (seller)',t:'cat',cat:'seller'},
       {k:'grant_date',l:'Ngày cấp',t:'date'},
       {k:'status',l:'Trạng thái',t:'sel',opts:['Đang dùng','Đã thu hồi'],req:1},
       {k:'cred_link',l:'Link NAS chứa mật khẩu',t:'text',sensitive:1},
       {k:'note',l:'Ghi chú',t:'textarea',full:1},
     ],
-    cols:['account_label','login_id','perm_level','granted_to','grant_date','status'],
-    filters:[['perm_level','Tất cả mức quyền',()=>['Admin','Nhân viên','Chỉ xem','Khác']],['status','Tất cả trạng thái',()=>['Đang dùng','Đã thu hồi']]],
+    cols:['account_label','login_id','granted_to','grant_date','status'],
+    filters:[['status','Tất cả trạng thái',()=>['Đang dùng','Đã thu hồi']]],
     badges:{status:{'Đang dùng':'green','Đã thu hồi':'mut'}}},
   cases:{table:'cases',title:'Case kháng',sub:'Mỗi dòng = 1 case · link đến TK · SLA tự tính từ ngày ghi case.',
     sellerScope:'seller', key:['account_id','date_start','error_type'], userCol:'created_by',
@@ -493,7 +492,10 @@ let MOD_STATE={};
 async function renderModule(key){
   const cfg=MODULES[key];
   await loadAccounts();
-  if(key==='accounts'){const {data:oc}=await sb.from('cases').select('account_id,status');window.OPEN_KH=new Set((oc||[]).filter(c=>['Pending','Đang xử lý','Chờ support'].includes(c.status)).map(c=>c.account_id));}
+  if(key==='accounts'){
+    const {data:oc}=await sb.from('cases').select('account_id,status');window.OPEN_KH=new Set((oc||[]).filter(c=>['Pending','Đang xử lý','Chờ support'].includes(c.status)).map(c=>c.account_id));
+    const {data:subs}=await sb.from('sub_accounts').select('*');window.SUBMAP={};(subs||[]).forEach(s=>{(window.SUBMAP[s.account_id]=window.SUBMAP[s.account_id]||[]).push(s);});
+  }
   const canEdit=['SD','PA'].includes(ME.role);
   const canAdd=canEdit||(['requests','cases'].includes(key)&&ME.role==='SELLER'&&ME.seller_name);
   const canDel=['SD','PA'].includes(ME.role);
@@ -543,7 +545,7 @@ function clearModFilters(key){
   paintRows(key);
 }
 function colLabel(cfg,c){
-  const map={account_label:'TK',platform:'Sàn',seller:'Seller',sla:'SLA',wait:'Chờ (ngày)',exp:'Còn lại',stageBar:'Giai đoạn'};
+  const map={account_label:'TK',platform:'Sàn',seller:'Seller',sla:'SLA',wait:'Chờ (ngày)',exp:'Còn lại',stageBar:'Giai đoạn',subacc:'TK phân quyền'};
   if(map[c])return map[c];
   const f=cfg.fields.find(x=>x.k===c);return f?f.l:c;
 }
@@ -612,6 +614,9 @@ function cellVal(cfg,r,c){
   if(c==='wait'){const d=daysBetween(r.request_date);if(r.approval_status!=='Chờ duyệt')return '<span class="chip mut">—</span>';return `<span class="chip ${d>2?'red':'amber'}">${d??0}d</span>`;}
   if(c==='exp'){const k=r.date_end||r.renew_date||r.data_expiry;const d=daysBetween(todayStr(),k);if(!k)return '<span class="chip mut">—</span>';if(d<0)return '<span class="chip red">hết hạn</span>';return `<span class="chip ${d<=7?'amber':'green'}">${d}d</span>`;}
   if(c==='stageBar'){return badge(cfg,'stage',r.stage);}
+  if(c==='subacc'){const subs=(window.SUBMAP&&window.SUBMAP[r.id])||[];const act=subs.filter(s=>s.status==='Đang dùng').length;
+    if(!subs.length)return '<span class="chip mut">—</span>';
+    return `<span class="chip green lnk" onclick="event.stopPropagation();showSubs(${r.id})">🔑 ${act}/${subs.length}</span>`;}
   const f=cfg.fields.find(x=>x.k===c);
   let v=r[c];
   if(cfg.badges&&cfg.badges[c]){let h=badge(cfg,c,v);if(c==='status'&&cfg.table==='accounts'&&window.OPEN_KH&&window.OPEN_KH.has(r.id))h+=' <span class="chip purple">⚖ kháng</span>';return h;}
@@ -722,6 +727,23 @@ async function reqApprove(id,ok){
   if(error)return toast('Lỗi: '+error.message);
   await logAct(ok?'Duyệt cấp TK':'Từ chối cấp TK','account_requests',id,'');
   toast(ok?'Đã duyệt ✓':'Đã từ chối');renderModule('requests');
+}
+function showSubs(accId){
+  const acc=ACCOUNTS.find(a=>a.id===accId)||(MOD_STATE['accounts']||[]).find(a=>a.id===accId);
+  const subs=(window.SUBMAP&&window.SUBMAP[accId])||[];
+  const canEdit=['SD','PA'].includes(ME.role);
+  $('drillTitle').textContent='TK phân quyền của '+(acc?acc.name:('#'+accId));
+  $('drillBody').innerHTML=(subs.length?
+    `<table><thead><tr><th>Email / ID đăng nhập</th><th>Cấp cho</th><th>Ngày cấp</th><th>Trạng thái</th><th>Link NAS</th></tr></thead><tbody>${
+      subs.map(s=>`<tr><td><b>${esc(s.login_id)}</b></td><td>${esc(s.granted_to||'')}</td><td>${esc(s.grant_date||'')}</td><td>${badge(MODULES.sub_accounts,'status',s.status)}</td><td>${s.cred_link&&['SD','PA'].includes(ME.role)?`<a href="${esc(s.cred_link)}" target="_blank" class="lnk">mở ›</a>`:'<span class="muted">—</span>'}</td></tr>`).join('')
+    }</tbody></table>`
+    :'<div class="empty">TK này chưa có tài khoản phân quyền nào.</div>')
+    +(canEdit?`<div style="margin-top:12px;text-align:right"><button class="btn sm" onclick="$('drillModal').classList.remove('show');go('sub_accounts');setTimeout(()=>openFormPrefill('sub_accounts',{account_id:${accId}}),300)">+ Thêm TK phân quyền</button></div>`:'');
+  $('drillModal').classList.add('show');
+}
+function openFormPrefill(key,pre){
+  openForm(key);
+  Object.entries(pre).forEach(([k,v])=>{const el=$('ff_'+k);if(el)el.value=v;});
 }
 function openReport(id){
   const r=(MOD_STATE['accounts']||[]).find(x=>x.id===id);if(!r)return;
@@ -844,22 +866,24 @@ $('impCommit').onclick=async()=>{
 
 /* ============ DASHBOARD ============ */
 async function renderDash(){
-  $('pageArea').innerHTML=`<div class="topbar"><div><h1>Tổng quan</h1><div class="sub">Lọc áp cho mọi khối · TK theo ngày cấp/mua · case theo ngày phát sinh · chi phí theo ngày chi</div></div></div>
-    <div class="filters" style="margin-bottom:14px">
-      <select id="dSeller" onchange="DF.seller=this.value;renderDash()"><option value="">Tất cả seller</option>${catOpts('seller').map(s=>`<option ${DF.seller===s?'selected':''}>${esc(s)}</option>`).join('')}</select>
+  const isStaff=['SD','QL','PA'].includes(ME.role), isMedia=ME.role==='FFM', isSeller=ME.role==='SELLER';
+  const sub=isStaff?'Lọc áp cho mọi khối · TK theo ngày cấp/mua · case theo ngày phát sinh · chi phí theo ngày chi'
+    :isMedia?'Bạn xem tình trạng tài khoản để chủ động dừng/làm video'
+    :'Tổng quan tài khoản bạn đang giữ';
+  const filterBar=isSeller?'':`<div class="filters" style="margin-bottom:14px">
+      ${isStaff?`<select id="dSeller" onchange="DF.seller=this.value;renderDash()"><option value="">Tất cả seller</option>${catOpts('seller').map(s=>`<option ${DF.seller===s?'selected':''}>${esc(s)}</option>`).join('')}</select>`:''}
       <select id="dPlat" onchange="DF.plat=this.value;renderDash()"><option value="">Tất cả sàn</option>${PLAT.map(s=>`<option ${DF.plat===s?'selected':''}>${s}</option>`).join('')}</select>
-      <select id="dSrc" onchange="DF.src=this.value;renderDash()"><option value="">Tất cả nguồn</option>${catOpts('nguon_tk').map(s=>`<option ${DF.src===s?'selected':''}>${esc(s)}</option>`).join('')}</select>
+      ${isStaff?`<select id="dSrc" onchange="DF.src=this.value;renderDash()"><option value="">Tất cả nguồn</option>${catOpts('nguon_tk').map(s=>`<option ${DF.src===s?'selected':''}>${esc(s)}</option>`).join('')}</select>`:''}
       <select id="dPeriod" onchange="DF.period=this.value;renderDash()">${[['all','Kỳ: Tất cả'],['month','Kỳ: Tháng này'],['30','Kỳ: 30 ngày'],['quarter','Kỳ: Quý này'],['year','Kỳ: Năm nay']].map(([v,l])=>`<option value="${v}" ${DF.period===v?'selected':''}>${l}</option>`).join('')}</select>
       <label class="muted" style="font-size:12px;display:flex;align-items:center;gap:6px">Từ <input type="date" value="${DF.from}" onchange="DF.from=this.value;renderDash()"></label>
       <label class="muted" style="font-size:12px;display:flex;align-items:center;gap:6px">đến <input type="date" value="${DF.to}" onchange="DF.to=this.value;renderDash()"></label>
       <button class="btn ghost sm" onclick="DF={seller:'',plat:'',src:'',period:'all',from:'',to:''};renderDash()">Xóa lọc</button>
-    </div>
-    <div class="grid kpis" id="kpis"></div>
-    <div class="grid" style="grid-template-columns:1.4fr 1fr;margin-top:14px">
+    </div>`;
+  const cardSellerSrc=(isStaff||isMedia)?`<div class="grid" style="grid-template-columns:${isStaff?'1.4fr 1fr':'1fr'};margin-top:14px">
       <div class="card"><h3>Phân bổ theo seller <span class="tag">tỷ lệ giữ TK</span></h3><div class="tbl-wrap"><table id="sellerTbl"></table></div></div>
-      <div class="card"><h3>Tỷ lệ sống theo nguồn TK <span class="tag">mua ở đâu sống lâu</span></h3><div class="tbl-wrap"><table id="srcTbl"></table></div></div>
-    </div>
-    <div class="grid" style="grid-template-columns:1fr 1fr;margin-top:14px">
+      ${isStaff?`<div class="card"><h3>Tỷ lệ sống theo nguồn TK <span class="tag">mua ở đâu sống lâu</span></h3><div class="tbl-wrap"><table id="srcTbl"></table></div></div>`:''}
+    </div>`:'';
+  const cardFin=isStaff?`<div class="grid" style="grid-template-columns:1fr 1fr;margin-top:14px">
       <div class="card"><h3>Case kháng <span class="tag">đang tồn</span></h3><div id="caseBox"></div></div>
       <div class="card"><h3>Tài chính <span class="tag">VND & USD tách riêng · bấm số xem TK</span></h3><div id="finBox"></div></div>
     </div>
@@ -869,11 +893,16 @@ async function renderDash(){
     <div class="grid" style="grid-template-columns:1.4fr 1fr;margin-top:14px">
       <div class="card"><h3>Chi phí theo nhóm <span class="tag">theo bộ lọc chung ở đầu trang</span></h3><canvas id="expChart" style="max-height:220px"></canvas><div class="empty" id="expChartEmpty" style="display:none">Chưa có chi phí trong kỳ đang lọc.</div></div>
       <div class="card"><h3>Số liệu theo nhóm <span class="tag" id="expTotalTag"></span></h3><div id="expTable" class="tbl-wrap"></div></div>
-    </div>
-    <div class="grid" style="grid-template-columns:1fr 1fr;margin-top:14px">
-      <div class="card"><h3>Pipeline TK mới</h3><div id="pipeBox"></div></div>
+    </div>`
+    :`<div class="grid" style="grid-template-columns:1fr;margin-top:14px"><div class="card"><h3>Case của bạn <span class="tag">đang tồn</span></h3><div id="caseBox"></div></div></div>`;
+  const cardBottom=(isStaff||isMedia)?`<div class="grid" style="grid-template-columns:${isStaff?'1fr 1fr':'1fr'};margin-top:14px">
+      ${isStaff?`<div class="card"><h3>Pipeline TK mới</h3><div id="pipeBox"></div></div>`:''}
       <div class="card"><h3>Cảnh báo cao <span class="tag">cần xử ngay</span></h3><div id="dashAlerts"></div></div>
-    </div>`;
+    </div>`:'';
+  $('pageArea').innerHTML=`<div class="topbar"><div><h1>Tổng quan</h1><div class="sub">${sub}</div></div></div>
+    ${filterBar}
+    <div class="grid kpis" id="kpis"></div>
+    ${cardSellerSrc}${cardFin}${cardBottom}`;
   const [accR,caseR,reqR,pipeR,expR]=await Promise.all([
     sb.from('accounts').select('*'),sb.from('cases').select('*'),
     sb.from('account_requests').select('*'),sb.from('pipeline_batches').select('*'),
@@ -915,15 +944,15 @@ async function renderDash(){
     return {s,a,d,n,tot,rate};}).sort((x,y)=>y.n-x.n);
   const sumA=sRows.reduce((x,r)=>x+r.a,0),sumD=sRows.reduce((x,r)=>x+r.d,0),sumT=sRows.reduce((x,r)=>x+r.tot,0),sumN=sRows.reduce((x,r)=>x+r.n,0);
   const sumRate=sumT?Math.round(sumA/sumT*100):0;
-  $('sellerTbl').innerHTML=`<thead><tr><th>Seller</th><th class="num">Active</th><th class="num">Die</th><th class="num">Cấp</th><th class="num">Tổng TK</th><th class="num">Giữ TK</th></tr></thead><tbody>${sRows.map(r=>`<tr><td>${esc(r.s)}</td><td class="num lnk" onclick="dashDrill('sel_a','${esc(r.s)}')">${r.a}</td><td class="num lnk" onclick="dashDrill('sel_d','${esc(r.s)}')">${r.d}</td><td class="num lnk" onclick="dashDrill('sel_cap','${esc(r.s)}')">${r.tot}</td><td class="num lnk" onclick="dashDrill('sel_all','${esc(r.s)}')"><b>${r.n}</b></td><td class="num"><span class="chip ${r.rate>=80?'green':r.rate>=60?'amber':'red'}">${r.rate}%</span></td></tr>`).join('')||'<tr><td colspan="6" class="empty">Chưa có TK</td></tr>'}${sRows.length?`<tr><td><b>Tổng cộng</b></td><td class="num"><b>${sumA}</b></td><td class="num"><b>${sumD}</b></td><td class="num"><b>${sumT}</b></td><td class="num"><b>${sumN}</b></td><td class="num"><span class="chip ${sumRate>=80?'green':sumRate>=60?'amber':'red'}">${sumRate}%</span></td></tr>`:''}</tbody>`;
+  if($('sellerTbl'))$('sellerTbl').innerHTML=`<thead><tr><th>Seller</th><th class="num">Active</th><th class="num">Die</th><th class="num">Cấp</th><th class="num">Tổng TK</th><th class="num">Giữ TK</th></tr></thead><tbody>${sRows.map(r=>`<tr><td>${esc(r.s)}</td><td class="num lnk" onclick="dashDrill('sel_a','${esc(r.s)}')">${r.a}</td><td class="num lnk" onclick="dashDrill('sel_d','${esc(r.s)}')">${r.d}</td><td class="num lnk" onclick="dashDrill('sel_cap','${esc(r.s)}')">${r.tot}</td><td class="num lnk" onclick="dashDrill('sel_all','${esc(r.s)}')"><b>${r.n}</b></td><td class="num"><span class="chip ${r.rate>=80?'green':r.rate>=60?'amber':'red'}">${r.rate}%</span></td></tr>`).join('')||'<tr><td colspan="6" class="empty">Chưa có TK</td></tr>'}${sRows.length?`<tr><td><b>Tổng cộng</b></td><td class="num"><b>${sumA}</b></td><td class="num"><b>${sumD}</b></td><td class="num"><b>${sumT}</b></td><td class="num"><b>${sumN}</b></td><td class="num"><span class="chip ${sumRate>=80?'green':sumRate>=60?'amber':'red'}">${sumRate}%</span></td></tr>`:''}</tbody>`;
   // source table
   const srcs=[...new Set(accs.map(a=>a.source).filter(Boolean))];
   let srcRows=srcs.map(s=>{const list=accs.filter(a=>a.source===s);const a=list.filter(x=>x.status==='Active').length;const tot=list.length;const rate=tot?Math.round(a/tot*100):0;return {s,a,tot,rate};}).sort((x,y)=>y.tot-x.tot);
-  $('srcTbl').innerHTML=`<thead><tr><th>Nguồn</th><th class="num">Active</th><th class="num">Tổng</th><th class="num">Sống</th></tr></thead><tbody>${srcRows.map(r=>`<tr><td>${esc(r.s)}</td><td class="num lnk" onclick="dashDrill('src_a','${esc(r.s)}')">${r.a}</td><td class="num lnk" onclick="dashDrill('src_all','${esc(r.s)}')">${r.tot}</td><td class="num"><span class="chip ${r.rate>=80?'green':r.rate>=60?'amber':'red'}">${r.rate}%</span></td></tr>`).join('')||'<tr><td colspan="4" class="empty">Chưa có nguồn</td></tr>'}</tbody>`;
+  if($('srcTbl'))$('srcTbl').innerHTML=`<thead><tr><th>Nguồn</th><th class="num">Active</th><th class="num">Tổng</th><th class="num">Sống</th></tr></thead><tbody>${srcRows.map(r=>`<tr><td>${esc(r.s)}</td><td class="num lnk" onclick="dashDrill('src_a','${esc(r.s)}')">${r.a}</td><td class="num lnk" onclick="dashDrill('src_all','${esc(r.s)}')">${r.tot}</td><td class="num"><span class="chip ${r.rate>=80?'green':r.rate>=60?'amber':'red'}">${r.rate}%</span></td></tr>`).join('')||'<tr><td colspan="4" class="empty">Chưa có nguồn</td></tr>'}</tbody>`;
   // cases
   const pend=cases.filter(c=>['Pending','Đang xử lý','Chờ support'].includes(c.status));
   const byPlat=p=>pend.filter(c=>c.platform===p).length;
-  $('caseBox').innerHTML=`<div style="display:flex;gap:18px;flex-wrap:wrap;font-size:13px">
+  if($('caseBox'))$('caseBox').innerHTML=`<div style="display:flex;gap:18px;flex-wrap:wrap;font-size:13px">
     <div><div class="kpi"><div class="label">Đang tồn</div><div class="val">${pend.length}</div></div></div>
     <div style="align-self:center">TTS ${byPlat('TTS')} · AMZ ${byPlat('AMZ')} · Etsy ${byPlat('Etsy')}<br>
     <span class="muted">Thành công: ${cases.filter(c=>c.status==='Thành công').length} · Thất bại/Dừng: ${cases.filter(c=>['Thất bại','Dừng'].includes(c.status)).length}</span></div></div>`;
@@ -936,7 +965,7 @@ async function renderDash(){
   const now=new Date(),m=now.getMonth(),y=now.getFullYear();
   const expMonth=exps.filter(e=>{const d=new Date(e.expense_date);return d.getMonth()===m&&d.getFullYear()===y;}).reduce((s,e)=>s+num(e.amount_vnd),0);
   const expAll=exps.reduce((s,e)=>s+num(e.amount_vnd),0);
-  $('finBox').innerHTML=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px">
+  if($('finBox'))$('finBox').innerHTML=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px">
     <div class="lnk" onclick="dashDrill('bal_active')"><div class="label muted">Balance active</div><b>$${fmtUsd(balUsd)}</b></div>
     <div class="lnk" onclick="dashDrill('hold_all')"><div class="label muted">On-hold tổng</div><b>$${fmtUsd(holdUsd)}</b></div>
     <div class="lnk" onclick="dashDrill('hold_risk')"><div class="label muted">On-hold ở TK khóa <span class="chip red" style="font-size:9px">nguy cơ mất</span></div><b style="color:var(--red)">$${fmtUsd(holdRisk)}</b></div>
@@ -945,17 +974,17 @@ async function renderDash(){
     <div><div class="label muted">Chi từ đầu</div><b>${fmtVnd(expAll)}₫</b></div></div>`;
   // Tiền treo theo TK — bảng chi tiết, sắp theo on-hold giảm dần
   const holdRows=accs.filter(a=>num(a.onhold_usd)>0).sort((x,y)=>num(y.onhold_usd)-num(x.onhold_usd));
-  $('holdTag').textContent=holdRows.length+' TK có tiền treo · tổng $'+fmtUsd(holdUsd);
-  $('holdBox').innerHTML=holdRows.length?`<table><thead><tr><th>TK</th><th>Sàn</th><th>Seller</th><th>Trạng thái</th><th class="num">On-hold ($)</th><th class="num">Balance ($)</th><th>Rút được?</th></tr></thead><tbody>${holdRows.map(a=>{const risk=['Die','Suspend'].includes(a.status);return `<tr><td>${esc(a.name)}</td><td>${a.platform}</td><td>${esc(a.seller)}</td><td>${badge(MODULES.accounts,'status',a.status)}</td><td class="num"><b style="${risk?'color:var(--red)':''}">${fmtUsd(a.onhold_usd)}</b></td><td class="num">${fmtUsd(a.balance_usd)}</td><td>${risk?'<span class="chip red">TK khóa — cần xử</span>':'<span class="chip green">TK sống</span>'}</td></tr>`;}).join('')}</tbody></table>`:'<div class="empty">Chưa có TK nào có tiền treo. Nhập cột On-hold ở bảng Tài khoản để theo dõi.</div>';
+  if($('holdTag'))$('holdTag').textContent=holdRows.length+' TK có tiền treo · tổng $'+fmtUsd(holdUsd);
+  if($('holdBox'))$('holdBox').innerHTML=holdRows.length?`<table><thead><tr><th>TK</th><th>Sàn</th><th>Seller</th><th>Trạng thái</th><th class="num">On-hold ($)</th><th class="num">Balance ($)</th><th>Rút được?</th></tr></thead><tbody>${holdRows.map(a=>{const risk=['Die','Suspend'].includes(a.status);return `<tr><td>${esc(a.name)}</td><td>${a.platform}</td><td>${esc(a.seller)}</td><td>${badge(MODULES.accounts,'status',a.status)}</td><td class="num"><b style="${risk?'color:var(--red)':''}">${fmtUsd(a.onhold_usd)}</b></td><td class="num">${fmtUsd(a.balance_usd)}</td><td>${risk?'<span class="chip red">TK khóa — cần xử</span>':'<span class="chip green">TK sống</span>'}</td></tr>`;}).join('')}</tbody></table>`:'<div class="empty">Chưa có TK nào có tiền treo. Nhập cột On-hold ở bảng Tài khoản để theo dõi.</div>';
   // chi phí theo nhóm
   window._exps=exps;drawExpChart();
   // pipeline
-  $('pipeBox').innerHTML=pipes.length?pipes.map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)"><div><b>${esc(p.batch_name)}</b> <span class="muted">· ${esc(p.platform)} · ${p.qty} TK</span></div>${badge(MODULES.pipeline,'stage',p.stage)}</div>`).join(''):'<div class="empty">Chưa có batch</div>';
+  if($('pipeBox'))$('pipeBox').innerHTML=pipes.length?pipes.map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)"><div><b>${esc(p.batch_name)}</b> <span class="muted">· ${esc(p.platform)} · ${p.qty} TK</span></div>${badge(MODULES.pipeline,'stage',p.stage)}</div>`).join(''):'<div class="empty">Chưa có batch</div>';
   // alerts
-  await loadSeen();const al=await computeAlerts();window._alerts=al;
-  const hi=al.map((a,i)=>({a,i})).filter(x=>x.a.lv==='hi').slice(0,6);
-  $('dashAlerts').innerHTML=hi.length?hi.map(x=>alertHtml(x.a,x.i)).join(''):'<div class="empty">Không có cảnh báo cao 🎉</div>';
-  updateAlertBadge(al);
+  if($('dashAlerts')){await loadSeen();const al=await computeAlerts();window._alerts=al;
+    const hi=al.map((a,i)=>({a,i})).filter(x=>x.a.lv==='hi').slice(0,6);
+    $('dashAlerts').innerHTML=hi.length?hi.map(x=>alertHtml(x.a,x.i)).join(''):'<div class="empty">Không có cảnh báo cao 🎉</div>';
+    updateAlertBadge(al);}
 }
 
 function dashDrill(code,val){
@@ -1086,39 +1115,53 @@ async function computeAlerts(){
     sb.from('proxies').select('*'),sb.from('tool_accounts').select('*'),sb.from('llcs').select('*')]);
   const accs=accR.data||[],cases=caseR.data||[],reqs=reqR.data||[],prox=proxR.data||[],tools=toolR.data||[],llcs=llcR.data||[];
   const A=[];const D=(k,b)=>daysBetween(b||todayStr(),k);
-  accs.forEach(a=>{if(['Die','Suspend'].includes(a.status)&&a.status_changed_at&&daysBetween(a.status_changed_at)<=1)A.push({lv:'hi',ic:'🔴',t:`TK ${a.name} chuyển ${a.status} trong 24h`,w:`seller ${a.seller} · lỗi ${a.error_type||'?'}`});
-    if(['Die','Suspend'].includes(a.status)&&num(a.onhold_usd)>500)A.push({lv:'hi',ic:'🔴',t:`TK ${a.name} khóa — $${fmtUsd(a.onhold_usd)} on-hold`,w:`seller ${a.seller}`});});
-  // seller retention <60
-  const sellers=[...new Set(accs.map(a=>a.seller).filter(Boolean))];
-  sellers.forEach(s=>{const list=accs.filter(a=>a.seller===s);const act=list.filter(x=>x.status==='Active').length;const tot=list.filter(x=>['Active','Die','Suspend','Thu hồi'].includes(x.status)).length;if(tot>=3){const r=Math.round(act/tot*100);if(r<60)A.push({lv:'mid',ic:'🟠',t:`${s} tỷ lệ giữ TK thấp: ${r}%`,w:`${act}/${tot} active`});}});
-  cases.forEach(c=>{if(['Pending','Đang xử lý'].includes(c.status)){const d=daysBetween(c.date_start);if(d>3&&!c.date_appeal)A.push({lv:'mid',ic:'🟠',t:`Case ${accLabel(c.account_id)} tồn ${d} ngày chưa gửi kháng`,w:c.error_type});}});
-  reqs.forEach(r=>{if(r.approval_status==='Chờ duyệt'){const d=daysBetween(r.request_date);if(d>2)A.push({lv:'lo',ic:'🟡',t:`${r.seller} yêu cầu cấp TK chưa duyệt`,w:`${d} ngày · ${r.account_type}`});}});
-  prox.forEach(p=>{if(p.status==='Active'&&p.date_end){const d=D(p.date_end);if(d>=0&&d<=7)A.push({lv:'mid',ic:'🟠',t:`Proxy ${p.profile_name||p.proxy_string} hết hạn trong ${d} ngày`,w:p.vendor||''});}});
-  tools.forEach(t=>{if(t.status!=='Dừng'&&t.renew_date){const d=D(t.renew_date);if(d>=0&&d<=7)A.push({lv:'mid',ic:'🟠',t:`Tool ${t.tool_type} đến hạn gia hạn trong ${d} ngày`,w:t.mail||''});}});
-  accs.forEach(a=>{if(a.warranty_end){const d=D(a.warranty_end);if(d>=0&&d<=5)A.push({lv:'mid',ic:'🟠',t:`TK ${a.name} hết bảo hành trong ${d} ngày`,w:`seller ${a.seller}`});}
-    if(a.phone_change_due){const d=D(a.phone_change_due);if(d>=0&&d<=7)A.push({lv:'lo',ic:'🟡',t:`TK ${a.name} đến hạn thay phone trong ${d} ngày`,w:''});}});
-  llcs.forEach(l=>{if(l.end_date){const d=D(l.end_date);if(d>=0&&d<=30)A.push({lv:'lo',ic:'🟡',t:`LLC ${l.llc_name} hết hạn trong ${d} ngày`,w:l.owner_name});}});
+  const NOTSELLER=['Chưa phân','Thu hồi',''];
+  const push=(o)=>A.push(o);
+  accs.forEach(a=>{if(['Die','Suspend'].includes(a.status)&&a.status_changed_at&&daysBetween(a.status_changed_at)<=1)push({lv:'hi',cat:'Vừa khóa',src:'accounts',ic:'🔴',t:`TK ${a.name} chuyển ${a.status} trong 24h`,w:`seller ${a.seller} · lỗi ${a.error_type||'?'}`});
+    if(['Die','Suspend'].includes(a.status)&&num(a.onhold_usd)>500)push({lv:'hi',cat:'Tiền treo ở TK khóa',src:'accounts',ic:'💰',t:`TK ${a.name} khóa — $${fmtUsd(a.onhold_usd)} on-hold`,w:`seller ${a.seller} · nguy cơ mất tiền`});});
+  const sellers=[...new Set(accs.map(a=>a.seller).filter(s=>s&&!NOTSELLER.includes(s)))];
+  sellers.forEach(s=>{const list=accs.filter(a=>a.seller===s);const act=list.filter(x=>x.status==='Active').length;const tot=list.filter(x=>['Active','Die','Suspend','Thu hồi'].includes(x.status)).length;if(tot>=3){const r=Math.round(act/tot*100);if(r<60)push({lv:'mid',cat:'Tỷ lệ giữ TK thấp',src:'accounts',ic:'📉',t:`${s} giữ TK ${r}%`,w:`${act}/${tot} còn active`});}});
+  cases.forEach(c=>{if(['Pending','Đang xử lý'].includes(c.status)){const d=daysBetween(c.date_start);if(d>3&&!c.date_appeal)push({lv:'mid',cat:'Case tồn chưa xử',src:'cases',ic:'⚖',t:`Case ${accLabel(c.account_id)} tồn ${d} ngày`,w:`${c.error_type||''} · chưa gửi kháng`});}});
+  reqs.forEach(r=>{if(r.approval_status==='Chờ duyệt'){const d=daysBetween(r.request_date);if(d>2)push({lv:'lo',cat:'Yêu cầu chờ duyệt',src:'requests',ic:'✉',t:`${r.seller} yêu cầu cấp TK`,w:`chờ ${d} ngày · ${r.account_type}`});}});
+  prox.forEach(p=>{if(p.status==='Active'&&p.date_end){const d=D(p.date_end);if(d>=0&&d<=7)push({lv:'mid',cat:'Sắp hết hạn',src:'proxies',ic:'⇄',t:`Proxy ${p.profile_name||p.proxy_string} hết hạn`,w:`còn ${d} ngày · ${p.vendor||''}`});}});
+  tools.forEach(t=>{if(t.status!=='Dừng'&&t.renew_date){const d=D(t.renew_date);if(d>=0&&d<=7)push({lv:'mid',cat:'Sắp hết hạn',src:'tool_accounts',ic:'⚙',t:`Tool ${t.tool_type} đến hạn gia hạn`,w:`còn ${d} ngày · ${t.mail||''}`});}});
+  accs.forEach(a=>{if(a.warranty_end){const d=D(a.warranty_end);if(d>=0&&d<=5)push({lv:'mid',cat:'Sắp hết hạn',src:'accounts',ic:'🛡',t:`TK ${a.name} hết bảo hành`,w:`còn ${d} ngày · seller ${a.seller}`});}
+    if(a.phone_change_due){const d=D(a.phone_change_due);if(d>=0&&d<=7)push({lv:'lo',cat:'Sắp hết hạn',src:'accounts',ic:'📱',t:`TK ${a.name} đến hạn thay phone`,w:`còn ${d} ngày`});}});
+  llcs.forEach(l=>{if(l.end_date){const d=D(l.end_date);if(d>=0&&d<=30)push({lv:'lo',cat:'Sắp hết hạn',src:'llcs',ic:'§',t:`LLC ${l.llc_name} hết hạn`,w:`còn ${d} ngày · ${l.owner_name}`});}});
   try{
     const {data:snaps}=await sb.from('weekly_snapshots').select('*').order('week_start');
     const wk=mondayOf(new Date());const prev=(snaps||[]).filter(s=>s.week_start<wk).pop();
     if(prev){const prevTot=num(prev.tts_active)+num(prev.amz_active)+num(prev.etsy_active)+num(prev.other_active);
       const curTot=accs.filter(a=>a.status==='Active').length;
-      if(prevTot-curTot>3)A.push({lv:'hi',ic:'🔴',t:`Tổng active giảm ${prevTot-curTot} TK so với tuần trước`,w:`${prevTot} → ${curTot}`});}
+      if(prevTot-curTot>3)push({lv:'hi',cat:'Biến động',src:'accounts',ic:'📉',t:`Tổng active giảm ${prevTot-curTot} TK so tuần trước`,w:`${prevTot} → ${curTot}`});}
   }catch(e){}
   A.forEach(a=>a.key=a.t);
   const order={hi:0,mid:1,lo:2};A.sort((x,y)=>order[x.lv]-order[y.lv]);
   return A;
 }
+const CAT_ORDER=['Tiền treo ở TK khóa','Vừa khóa','Biến động','Case tồn chưa xử','Tỷ lệ giữ TK thấp','Sắp hết hạn','Yêu cầu chờ duyệt'];
+const SRC_LABEL={accounts:'Tài khoản',cases:'Case kháng',requests:'Yêu cầu cấp TK',proxies:'Proxy',tool_accounts:'TK công cụ',llcs:'LLC'};
 let SEEN=new Set();
-function alertHtml(a,i){const seen=SEEN.has(a.key);return `<div class="alert ${a.lv} ${seen?'seen':''}" onclick="markSeenIdx(this,${i})"><div class="ic">${a.ic}</div><div><b>${esc(a.t)}</b><div class="who">${esc(a.w||'')}</div></div>${seen?'<span class="seen-tag">✓ đã xem</span>':'<span class="who">bấm để ẩn</span>'}</div>`;}
-async function markSeenIdx(el,i){const a=(window._alerts||[])[i];if(!a)return;SEEN.add(a.key);el.classList.add('seen');try{await sb.from('alert_seen').insert({alert_key:a.key.slice(0,300),user_id:ME.id});}catch(e){}updateAlertBadge(window._alerts);}
+function alertHtml(a,i){const seen=SEEN.has(a.key);const srcL=SRC_LABEL[a.src]||'';return `<div class="alert ${a.lv} ${seen?'seen':''}"><div class="ic">${a.ic}</div><div style="min-width:0"><b>${esc(a.t)}</b><div class="who">${esc(a.w||'')}${srcL?` · <span class="chip mut" style="font-size:9px">nguồn: ${srcL}</span>`:''}</div></div><div style="display:flex;gap:6px;align-items:center;white-space:nowrap">${a.src?`<button class="btn ghost sm" onclick="event.stopPropagation();go('${a.src}')">Mở ›</button>`:''}<span class="lnk" style="font-size:12px;color:var(--muted)" onclick="markSeenIdx(this,${i})">${seen?'✓ đã xem':'đánh dấu đã xem'}</span></div></div>`;}
+async function markSeenIdx(el,i){const a=(window._alerts||[])[i];if(!a)return;SEEN.add(a.key);const card=el.closest('.alert');if(card)card.classList.add('seen');el.textContent='✓ đã xem';try{await sb.from('alert_seen').insert({alert_key:a.key.slice(0,300),user_id:ME.id});}catch(e){}updateAlertBadge(window._alerts);}
 async function loadSeen(){const {data}=await sb.from('alert_seen').select('alert_key').eq('user_id',ME.id);SEEN=new Set((data||[]).map(x=>x.alert_key));}
 function updateAlertBadge(al){const cnt=(al||[]).filter(a=>!SEEN.has(a.key)).length;const b=$('navAlerts');if(b){b.textContent=cnt;b.style.display=cnt?'inline-block':'none';}}
 async function renderAlerts(){
-  $('pageArea').innerHTML=`<div class="topbar"><div><h1>Cảnh báo</h1><div class="sub">Tự sinh từ dữ liệu · ưu tiên cao → thấp</div></div>
+  $('pageArea').innerHTML=`<div class="topbar"><div><h1>Cảnh báo</h1><div class="sub">Tự sinh từ dữ liệu · gom theo loại · bấm "Mở ›" để tới đúng chỗ xử lý</div></div>
     <button class="btn ghost sm" onclick="markAllSeen()">✓ Đánh dấu tất cả đã xem</button></div><div id="alertList"></div>`;
   await loadSeen();const al=await computeAlerts();window._alerts=al;
-  $('alertList').innerHTML=al.length?al.map((a,i)=>alertHtml(a,i)).join(''):'<div class="card empty">Không có cảnh báo nào 🎉</div>';
+  if(!al.length){$('alertList').innerHTML='<div class="card empty">Không có cảnh báo nào 🎉</div>';updateAlertBadge(al);return;}
+  const idx=new Map();al.forEach((a,i)=>idx.set(a,i));
+  const cats=[...CAT_ORDER,...[...new Set(al.map(a=>a.cat))].filter(c=>!CAT_ORDER.includes(c))];
+  let html='';
+  cats.forEach(cat=>{
+    const items=al.filter(a=>a.cat===cat);if(!items.length)return;
+    const unseen=items.filter(a=>!SEEN.has(a.key)).length;
+    const lv=items[0].lv;const dot=lv==='hi'?'🔴':lv==='mid'?'🟠':'🟡';
+    html+=`<div style="margin:16px 0 8px;display:flex;align-items:center;gap:8px"><b style="font-size:14px">${dot} ${esc(cat)}</b><span class="chip ${unseen?'red':'mut'}">${items.length} mục${unseen?` · ${unseen} mới`:''}</span></div>`;
+    html+=items.map(a=>alertHtml(a,idx.get(a))).join('');
+  });
+  $('alertList').innerHTML=html;
   updateAlertBadge(al);
 }
 async function markAllSeen(){for(const a of (window._alerts||[])){if(!SEEN.has(a.key)){SEEN.add(a.key);try{await sb.from('alert_seen').insert({alert_key:a.key.slice(0,300),user_id:ME.id});}catch(e){}}}renderAlerts();toast('Đã đánh dấu tất cả ✓');}
