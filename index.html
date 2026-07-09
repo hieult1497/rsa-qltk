@@ -176,7 +176,7 @@
 <!-- APP -->
 <div class="app" id="app" style="display:none">
   <aside class="side collapsed" id="side">
-    <div class="logo"><div class="dot">R</div><div><b>RSA QLTK</b><small>RS Agency · v2.7</small></div>
+    <div class="logo"><div class="dot">R</div><div><b>RSA QLTK</b><small>RS Agency · v2.8</small></div>
       <button class="hamb" id="hamb">☰</button></div>
     <div class="user"><div class="av" id="uAv">?</div><div><b id="uName">—</b><small id="uRole">—</small></div>
       <div style="margin-left:auto;display:flex;gap:8px"><div class="out" id="btnTheme" title="Đổi màu">◐</div><div class="out" id="btnOut" title="Đăng xuất">⎋</div></div></div>
@@ -1321,7 +1321,27 @@ async function renderCats(){
     <div class="filters">${CAT_GROUPS.map(([k,l])=>`<button class="btn ${k===catGroup?'':'ghost'} sm" onclick="catGroup='${k}';renderCats()">${l}</button>`).join('')}</div>
     <div class="card"><div class="filters"><input class="search" id="newCat" placeholder="Thêm giá trị mới..." style="max-width:240px"><button class="btn sm" onclick="addCat()">+ Thêm</button></div><div id="catList" class="muted">Đang tải...</div></div>`;
   const {data}=await sb.from('categories').select('*').eq('group_name',catGroup).order('sort').order('value');
-  $('catList').innerHTML=(data&&data.length)?`<div class="tbl-wrap"><table><thead><tr><th>Giá trị</th><th>Trạng thái</th><th></th></tr></thead><tbody>${data.map(c=>`<tr><td>${esc(c.value)}</td><td>${c.active?'<span class="chip green">Đang dùng</span>':'<span class="chip mut">Tắt</span>'}</td><td style="white-space:nowrap"><button class="btn ghost sm" onclick="toggleCat(${c.id},${!c.active})">${c.active?'Tắt':'Bật'}</button> ${ME.role==='SD'?`<button class="btn danger sm" onclick="delCat(${c.id},'${esc(c.value)}')">Xóa</button>`:''}</td></tr>`).join('')}</tbody></table></div>`:'Chưa có giá trị.';
+  const isSeller=catGroup==='seller';
+  $('catList').innerHTML=(data&&data.length)?`<div class="tbl-wrap"><table><thead><tr><th>Giá trị</th><th>Trạng thái</th>${isSeller?'<th class="num">TK đang gắn</th>':''}<th></th></tr></thead><tbody>${data.map(c=>`<tr><td>${esc(c.value)}</td><td>${c.active?'<span class="chip green">Đang dùng</span>':'<span class="chip mut">Tắt</span>'}</td>${isSeller?`<td class="num" id="scnt_${c.id}" class="muted">·</td>`:''}<td style="white-space:nowrap">${isSeller?`<button class="btn ghost sm" onclick="renameSeller('${esc(c.value)}')">Đổi tên / gộp</button> `:''}<button class="btn ghost sm" onclick="toggleCat(${c.id},${!c.active})">${c.active?'Tắt':'Bật'}</button> ${ME.role==='SD'?`<button class="btn danger sm" onclick="delCat(${c.id},'${esc(c.value)}')">Xóa</button>`:''}</td></tr>`).join('')}</tbody></table></div>`:'Chưa có giá trị.';
+  if(isSeller){const {data:accs}=await sb.from('accounts').select('seller');const cnt={};(accs||[]).forEach(a=>{cnt[a.seller]=(cnt[a.seller]||0)+1;});data.forEach(c=>{const el=$('scnt_'+c.id);if(el)el.textContent=cnt[c.value]||0;});}
+}
+async function renameSeller(oldName){
+  const nw=prompt(`Đổi seller "${oldName}" thành (hoặc gộp vào tên đã có):`,oldName);
+  if(nw===null)return;const newName=nw.trim();if(!newName||newName===oldName)return;
+  if(!confirm(`Đổi TẤT CẢ dữ liệu có seller "${oldName}" → "${newName}"?\n(Áp cho: Tài khoản, Case, Yêu cầu, TK phân quyền, và user seller đang gán). Không hoàn tác được.`))return;
+  try{
+    await sb.from('accounts').update({seller:newName}).eq('seller',oldName);
+    await sb.from('cases').update({seller:newName}).eq('seller',oldName);
+    await sb.from('account_requests').update({seller:newName}).eq('seller',oldName);
+    await sb.from('sub_accounts').update({granted_to:newName}).eq('granted_to',oldName);
+    await sb.from('profiles').update({seller_name:newName}).eq('seller_name',oldName);
+    // danh mục: nếu newName đã tồn tại thì xóa dòng cũ, ngược lại đổi tên dòng cũ
+    const {data:ex}=await sb.from('categories').select('id').eq('group_name','seller').eq('value',newName).maybeSingle();
+    if(ex){await sb.from('categories').delete().eq('group_name','seller').eq('value',oldName);}
+    else{await sb.from('categories').update({value:newName}).eq('group_name','seller').eq('value',oldName);}
+    await logAct('Đổi tên seller','categories',oldName+' → '+newName,'');
+    await loadCats();toast(`Đã đổi "${oldName}" → "${newName}" trên toàn bộ dữ liệu ✓`);renderCats();
+  }catch(e){toast('Lỗi: '+e.message);}
 }
 async function addCat(){const v=$('newCat').value.trim();if(!v)return;const {error}=await sb.from('categories').insert({group_name:catGroup,value:v});if(error)return toast(error.code==='23505'?'Đã tồn tại':'Lỗi: '+error.message);await loadCats();renderCats();}
 async function toggleCat(id,a){await sb.from('categories').update({active:a}).eq('id',id);await loadCats();renderCats();}
