@@ -176,7 +176,7 @@
 <!-- APP -->
 <div class="app" id="app" style="display:none">
   <aside class="side collapsed" id="side">
-    <div class="logo"><div class="dot">R</div><div><b>RSA QLTK</b><small>RS Agency · v2.6</small></div>
+    <div class="logo"><div class="dot">R</div><div><b>RSA QLTK</b><small>RS Agency · v2.7</small></div>
       <button class="hamb" id="hamb">☰</button></div>
     <div class="user"><div class="av" id="uAv">?</div><div><b id="uName">—</b><small id="uRole">—</small></div>
       <div style="margin-left:auto;display:flex;gap:8px"><div class="out" id="btnTheme" title="Đổi màu">◐</div><div class="out" id="btnOut" title="Đăng xuất">⎋</div></div></div>
@@ -1159,7 +1159,7 @@ async function buildNotiItems(){
   (caseR.data||[]).forEach(c=>{
     if(new Date(c.created_at).getTime()<since)return;
     const care=['SD','QL','PA','FFM','SELLER'];if(!care.includes(r))return;
-    items.push({key:'case:'+c.id,cat:'Seller báo lỗi',src:'cases',ic:'⚠',lv:['Thất bại','Dừng'].includes(c.status)?'hi':'mid',
+    items.push({key:'case:'+c.id,cat:'Seller báo lỗi',src:'cases',acc:c.account_id,ic:'⚠',lv:['Thất bại','Dừng'].includes(c.status)?'hi':'mid',
       t:`Báo lỗi TK ${nm(c.account_id)}`,w:`${c.seller||''} · ${c.error_type||''} · ${c.status}`,ts:c.created_at});
   });
   // 2) LOG đổi trạng thái. Media + Seller + PA/QL/SD
@@ -1167,7 +1167,7 @@ async function buildNotiItems(){
     if(new Date(l.changed_at).getTime()<since)return;
     const risk=['Die','Suspend'].includes(l.new_status);
     if(r==='FFM'&&!risk&&l.new_status!=='Active')return; // Media chỉ quan tâm khóa/hồi
-    items.push({key:'slog:'+l.id,cat:risk?'TK bị khóa/lỗi':(l.new_status==='Active'?'TK hoạt động lại':'Đổi trạng thái khác'),src:'accounts',
+    items.push({key:'slog:'+l.id,cat:risk?'TK bị khóa/lỗi':(l.new_status==='Active'?'TK hoạt động lại':'Đổi trạng thái khác'),src:'accounts',acc:l.account_id,
       ic:risk?'🔴':(l.new_status==='Active'?'🟢':'🔵'),lv:risk?'hi':'lo',
       t:`TK ${nm(l.account_id)}: ${l.old_status||'?'} → ${l.new_status}`,
       w:risk?(r==='FFM'?'Media dừng làm video kênh này':'Cần xử lý'):(l.new_status==='Active'?(r==='FFM'?'Media làm video lại':'TK hoạt động lại'):''),
@@ -1191,7 +1191,8 @@ async function buildNotiItems(){
 }
 const NOTI_CAT_ORDER=['TK bị khóa/lỗi','Seller báo lỗi','TK hoạt động lại','Yêu cầu cấp TK','Kết quả duyệt yêu cầu','Đã cấp TK','Đổi trạng thái khác'];
 function notiHtml(a,i){const seen=SEEN.has(a.key);const srcL=SRC_LABEL[a.src]||'';
-  return `<div class="alert ${a.lv} ${seen?'seen':''}"><div class="ic">${a.ic}</div><div style="min-width:0"><b>${esc(a.t)}</b><div class="who">${esc(a.w||'')}${a.by?' · '+esc(a.by):''} · ${new Date(a.ts).toLocaleString('vi-VN')}${srcL?` · <span class="chip mut" style="font-size:9px">${srcL}</span>`:''}</div></div><div style="display:flex;gap:6px;align-items:center;white-space:nowrap">${a.src?`<button class="btn ghost sm" onclick="event.stopPropagation();go('${a.src}')">Mở ›</button>`:''}<span class="lnk" style="font-size:12px;color:var(--muted)" onclick="markNoti(this,${i})">${seen?'✓ đã đọc':'đánh dấu đã đọc'}</span></div></div>`;}
+  const openJs=a.acc?`openAccProfile(${a.acc})`:`go('${a.src}')`;
+  return `<div class="alert ${a.lv} ${seen?'seen':''}"><div class="ic">${a.ic}</div><div style="min-width:0"><b>${esc(a.t)}</b><div class="who">${esc(a.w||'')}${a.by?' · '+esc(a.by):''} · ${new Date(a.ts).toLocaleString('vi-VN')}${srcL?` · <span class="chip mut" style="font-size:9px">${srcL}</span>`:''}</div></div><div style="display:flex;gap:6px;align-items:center;white-space:nowrap"><button class="btn ghost sm" onclick="event.stopPropagation();${openJs}">Mở ›</button><span class="lnk" style="font-size:12px;color:var(--muted)" onclick="markNoti(this,${i})">${seen?'✓ đã đọc':'đánh dấu đã đọc'}</span></div></div>`;}
 async function renderNoti(){
   $('pageArea').innerHTML=`<div class="topbar"><div><h1>Thông báo</h1><div class="sub">Việc liên quan bộ phận của bạn · gom theo loại · 30 ngày gần nhất</div></div>
     <button class="btn ghost sm" onclick="markAllNoti()">✓ Đánh dấu tất cả đã đọc</button></div><div id="notiList" class="muted">Đang tải...</div>`;
@@ -1221,16 +1222,16 @@ async function computeAlerts(){
   const A=[];const D=(k,b)=>daysBetween(b||todayStr(),k);
   const NOTSELLER=['Chưa phân','Thu hồi',''];
   const push=(o)=>A.push(o);
-  accs.forEach(a=>{if(['Die','Suspend'].includes(a.status)&&a.status_changed_at&&daysBetween(a.status_changed_at)<=1)push({lv:'hi',cat:'Vừa khóa',src:'accounts',ic:'🔴',t:`TK ${a.name} chuyển ${a.status} trong 24h`,w:`seller ${a.seller} · lỗi ${a.error_type||'?'}`});
-    if(['Die','Suspend'].includes(a.status)&&num(a.onhold_usd)>500)push({lv:'hi',cat:'Tiền treo ở TK khóa',src:'accounts',ic:'💰',t:`TK ${a.name} khóa — $${fmtUsd(a.onhold_usd)} on-hold`,w:`seller ${a.seller} · nguy cơ mất tiền`});});
+  accs.forEach(a=>{if(['Die','Suspend'].includes(a.status)&&a.status_changed_at&&daysBetween(a.status_changed_at)<=1)push({lv:'hi',cat:'Vừa khóa',src:'accounts',acc:a.id,ic:'🔴',t:`TK ${a.name} chuyển ${a.status} trong 24h`,w:`seller ${a.seller} · lỗi ${a.error_type||'?'}`});
+    if(['Die','Suspend'].includes(a.status)&&num(a.onhold_usd)>500)push({lv:'hi',cat:'Tiền treo ở TK khóa',src:'accounts',acc:a.id,ic:'💰',t:`TK ${a.name} khóa — $${fmtUsd(a.onhold_usd)} on-hold`,w:`seller ${a.seller} · nguy cơ mất tiền`});});
   const sellers=[...new Set(accs.map(a=>a.seller).filter(s=>s&&!NOTSELLER.includes(s)))];
   sellers.forEach(s=>{const list=accs.filter(a=>a.seller===s);const act=list.filter(x=>x.status==='Active').length;const tot=list.filter(x=>['Active','Die','Suspend','Thu hồi'].includes(x.status)).length;if(tot>=3){const r=Math.round(act/tot*100);if(r<60)push({lv:'mid',cat:'Tỷ lệ giữ TK thấp',src:'accounts',ic:'📉',t:`${s} giữ TK ${r}%`,w:`${act}/${tot} còn active`});}});
-  cases.forEach(c=>{if(['Pending','Đang xử lý'].includes(c.status)){const d=daysBetween(c.date_start);if(d>3&&!c.date_appeal)push({lv:'mid',cat:'Case tồn chưa xử',src:'cases',ic:'⚖',t:`Case ${accLabel(c.account_id)} tồn ${d} ngày`,w:`${c.error_type||''} · chưa gửi kháng`});}});
+  cases.forEach(c=>{if(['Pending','Đang xử lý'].includes(c.status)){const d=daysBetween(c.date_start);if(d>3&&!c.date_appeal)push({lv:'mid',cat:'Case tồn chưa xử',src:'cases',acc:c.account_id,ic:'⚖',t:`Case ${accLabel(c.account_id)} tồn ${d} ngày`,w:`${c.error_type||''} · chưa gửi kháng`});}});
   reqs.forEach(r=>{if(r.approval_status==='Chờ duyệt'){const d=daysBetween(r.request_date);if(d>2)push({lv:'lo',cat:'Yêu cầu chờ duyệt',src:'requests',ic:'✉',t:`${r.seller} yêu cầu cấp TK`,w:`chờ ${d} ngày · ${r.account_type}`});}});
   prox.forEach(p=>{if(p.status==='Active'&&p.date_end){const d=D(p.date_end);if(d>=0&&d<=7)push({lv:'mid',cat:'Sắp hết hạn',src:'proxies',ic:'⇄',t:`Proxy ${p.profile_name||p.proxy_string} hết hạn`,w:`còn ${d} ngày · ${p.vendor||''}`});}});
   tools.forEach(t=>{if(t.status!=='Dừng'&&t.renew_date){const d=D(t.renew_date);if(d>=0&&d<=7)push({lv:'mid',cat:'Sắp hết hạn',src:'tool_accounts',ic:'⚙',t:`Tool ${t.tool_type} đến hạn gia hạn`,w:`còn ${d} ngày · ${t.mail||''}`});}});
-  accs.forEach(a=>{if(a.warranty_end){const d=D(a.warranty_end);if(d>=0&&d<=5)push({lv:'mid',cat:'Sắp hết hạn',src:'accounts',ic:'🛡',t:`TK ${a.name} hết bảo hành`,w:`còn ${d} ngày · seller ${a.seller}`});}
-    if(a.phone_change_due){const d=D(a.phone_change_due);if(d>=0&&d<=7)push({lv:'lo',cat:'Sắp hết hạn',src:'accounts',ic:'📱',t:`TK ${a.name} đến hạn thay phone`,w:`còn ${d} ngày`});}});
+  accs.forEach(a=>{if(a.warranty_end){const d=D(a.warranty_end);if(d>=0&&d<=5)push({lv:'mid',cat:'Sắp hết hạn',src:'accounts',acc:a.id,ic:'🛡',t:`TK ${a.name} hết bảo hành`,w:`còn ${d} ngày · seller ${a.seller}`});}
+    if(a.phone_change_due){const d=D(a.phone_change_due);if(d>=0&&d<=7)push({lv:'lo',cat:'Sắp hết hạn',src:'accounts',acc:a.id,ic:'📱',t:`TK ${a.name} đến hạn thay phone`,w:`còn ${d} ngày`});}});
   llcs.forEach(l=>{if(l.end_date){const d=D(l.end_date);if(d>=0&&d<=30)push({lv:'lo',cat:'Sắp hết hạn',src:'llcs',ic:'§',t:`LLC ${l.llc_name} hết hạn`,w:`còn ${d} ngày · ${l.owner_name}`});}});
   try{
     const {data:snaps}=await sb.from('weekly_snapshots').select('*').order('week_start');
@@ -1246,7 +1247,7 @@ async function computeAlerts(){
 const CAT_ORDER=['Tiền treo ở TK khóa','Vừa khóa','Biến động','Case tồn chưa xử','Tỷ lệ giữ TK thấp','Sắp hết hạn','Yêu cầu chờ duyệt'];
 const SRC_LABEL={accounts:'Tài khoản',cases:'Case kháng',requests:'Yêu cầu cấp TK',proxies:'Proxy',tool_accounts:'TK công cụ',llcs:'LLC'};
 let SEEN=new Set();
-function alertHtml(a,i){const seen=SEEN.has(a.key);const srcL=SRC_LABEL[a.src]||'';return `<div class="alert ${a.lv} ${seen?'seen':''}"><div class="ic">${a.ic}</div><div style="min-width:0"><b>${esc(a.t)}</b><div class="who">${esc(a.w||'')}${srcL?` · <span class="chip mut" style="font-size:9px">nguồn: ${srcL}</span>`:''}</div></div><div style="display:flex;gap:6px;align-items:center;white-space:nowrap">${a.src?`<button class="btn ghost sm" onclick="event.stopPropagation();go('${a.src}')">Mở ›</button>`:''}<span class="lnk" style="font-size:12px;color:var(--muted)" onclick="markSeenIdx(this,${i})">${seen?'✓ đã xem':'đánh dấu đã xem'}</span></div></div>`;}
+function alertHtml(a,i){const seen=SEEN.has(a.key);const srcL=SRC_LABEL[a.src]||'';const openJs=a.acc?`openAccProfile(${a.acc})`:`go('${a.src}')`;return `<div class="alert ${a.lv} ${seen?'seen':''}"><div class="ic">${a.ic}</div><div style="min-width:0"><b>${esc(a.t)}</b><div class="who">${esc(a.w||'')}${srcL?` · <span class="chip mut" style="font-size:9px">nguồn: ${srcL}</span>`:''}</div></div><div style="display:flex;gap:6px;align-items:center;white-space:nowrap">${a.src?`<button class="btn ghost sm" onclick="event.stopPropagation();${openJs}">Mở ›</button>`:''}<span class="lnk" style="font-size:12px;color:var(--muted)" onclick="markSeenIdx(this,${i})">${seen?'✓ đã xem':'đánh dấu đã xem'}</span></div></div>`;}
 async function markSeenIdx(el,i){const a=(window._alerts||[])[i];if(!a)return;SEEN.add(a.key);const card=el.closest('.alert');if(card)card.classList.add('seen');el.textContent='✓ đã xem';try{await sb.from('alert_seen').insert({alert_key:a.key.slice(0,300),user_id:ME.id});}catch(e){}updateAlertBadge(window._alerts);}
 async function loadSeen(){const {data}=await sb.from('alert_seen').select('alert_key').eq('user_id',ME.id);SEEN=new Set((data||[]).map(x=>x.alert_key));}
 function updateAlertBadge(al){const cnt=(al||[]).filter(a=>!SEEN.has(a.key)).length;const b=$('navAlerts');if(b){b.textContent=cnt;b.style.display=cnt?'inline-block':'none';}}
