@@ -176,7 +176,7 @@
 <!-- APP -->
 <div class="app" id="app" style="display:none">
   <aside class="side collapsed" id="side">
-    <div class="logo"><div class="dot">R</div><div><b>RSA QLTK</b><small>RS Agency · v1.9</small></div>
+    <div class="logo"><div class="dot">R</div><div><b>RSA QLTK</b><small>RS Agency · v2.1</small></div>
       <button class="hamb" id="hamb">☰</button></div>
     <div class="user"><div class="av" id="uAv">?</div><div><b id="uName">—</b><small id="uRole">—</small></div>
       <div style="margin-left:auto;display:flex;gap:8px"><div class="out" id="btnTheme" title="Đổi màu">◐</div><div class="out" id="btnOut" title="Đăng xuất">⎋</div></div></div>
@@ -336,6 +336,21 @@ const MODULES={
     cols:['name','platform','seller','status','source','warranty_end','balance_usd','onhold_usd','note'],
     filters:[['platform','Tất cả sàn',()=>PLAT],['status','Tất cả trạng thái',()=>ACC_STATUS],['source','Tất cả nguồn',()=>catOpts('nguon_tk')],['browser','Mọi browser','data']],
     badges:{status:{Active:'green',Die:'red',Suspend:'amber','Thu hồi':'mut','Mới':'blue'}}},
+  sub_accounts:{table:'sub_accounts',title:'TK phân quyền (sub-account)',sub:'Tài khoản phụ do shop chính cấp để seller đăng nhập — không cần mật khẩu shop chính.',
+    sellerScope:'granted_to', key:['account_id','login_id'], userCol:'created_by',
+    fields:[
+      {k:'account_id',l:'Shop chính',t:'acc',req:1},
+      {k:'login_id',l:'Email / ID đăng nhập phụ',t:'text',req:1},
+      {k:'perm_level',l:'Mức quyền',t:'sel',opts:['Admin','Nhân viên','Chỉ xem','Khác']},
+      {k:'granted_to',l:'Cấp cho (seller)',t:'cat',cat:'seller'},
+      {k:'grant_date',l:'Ngày cấp',t:'date'},
+      {k:'status',l:'Trạng thái',t:'sel',opts:['Đang dùng','Đã thu hồi'],req:1},
+      {k:'cred_link',l:'Link NAS chứa mật khẩu',t:'text',sensitive:1},
+      {k:'note',l:'Ghi chú',t:'textarea',full:1},
+    ],
+    cols:['account_label','login_id','perm_level','granted_to','grant_date','status'],
+    filters:[['perm_level','Tất cả mức quyền',()=>['Admin','Nhân viên','Chỉ xem','Khác']],['status','Tất cả trạng thái',()=>['Đang dùng','Đã thu hồi']]],
+    badges:{status:{'Đang dùng':'green','Đã thu hồi':'mut'}}},
   cases:{table:'cases',title:'Case kháng',sub:'Mỗi dòng = 1 case · link đến TK · SLA tự tính từ ngày ghi case.',
     sellerScope:'seller', key:['account_id','date_start','error_type'], userCol:'created_by',
     fields:[
@@ -426,6 +441,7 @@ const NAV=[
   {key:'alerts',ic:'⚠',label:'Cảnh báo',roles:['SD','QL','PA','FFM'],bell:'navAlerts'},
   {sec:'TÀI KHOẢN'},
   {key:'accounts',ic:'▤',label:'Tài khoản',roles:['SD','QL','PA','SELLER','FFM']},
+  {key:'sub_accounts',ic:'🔑',label:'TK phân quyền',roles:['SD','QL','PA','SELLER']},
   {key:'cases',ic:'⚖',label:'Case kháng',roles:['SD','QL','PA','SELLER','FFM']},
   {key:'requests',ic:'✉',label:'Yêu cầu cấp TK',roles:['SD','QL','PA','SELLER']},
   {key:'pipeline',ic:'⛓',label:'Pipeline TK mới',roles:['SD','QL','PA']},
@@ -535,8 +551,8 @@ function paintRows(key){
   const cfg=MODULES[key];let rows=(MOD_STATE[key]||[]).slice();
   const term=($('modSearch')?.value||'').toLowerCase();
   if(term)rows=rows.filter(r=>JSON.stringify(r).toLowerCase().includes(term));
-  if(ME.role==='SELLER'&&cfg.sellerScope)rows=rows.filter(r=>r.seller===ME.seller_name);
-  const sf=$('modSeller')?.value;if(sf)rows=rows.filter(r=>r.seller===sf);
+  if(ME.role==='SELLER'&&cfg.sellerScope)rows=rows.filter(r=>r[cfg.sellerScope]===ME.seller_name);
+  const sf=$('modSeller')?.value;if(sf)rows=rows.filter(r=>r[cfg.sellerScope]===sf);
   (cfg.filters||[]).forEach(ft=>{const el=$('mf_'+ft[0]);if(el&&el.value)rows=rows.filter(r=>String(r[ft[0]]??'')===el.value);});
   const gf=$('modGroup')?$('modGroup').value:'';if(gf)rows=rows.filter(r=>r.group_name===gf);
   const df=$('modFrom')?$('modFrom').value:'',dt=$('modTo')?$('modTo').value:'';
@@ -582,7 +598,7 @@ function rowActs(key,r,canEdit){
     if(r.approval_status==='Chờ duyệt'&&['QL','SD'].includes(ME.role))h+=`<button class="btn sm" onclick="reqApprove(${r.id},true)">✓ Duyệt</button> <button class="btn danger sm" onclick="reqApprove(${r.id},false)">✕ Từ chối</button> `;
     if(r.approval_status==='Đã duyệt'&&r.issue_status==='Chưa'&&canEdit)h+=`<button class="btn sm" onclick="openIssue(${r.id})">Cấp TK</button> `;
   }
-  if(key==='accounts'&&canEdit)h+=`<button class="btn sm" onclick="openQuickTT(${r.id})">Đổi TT</button> `;
+  if(key==='accounts'&&(canEdit||ME.role==='SELLER'))h+=`<button class="btn sm" onclick="openQuickTT(${r.id})">Đổi trạng thái</button> `;
   if(key==='accounts'&&ME.role==='SELLER')h+=`<button class="btn danger sm" onclick="openReport(${r.id})">⚠ Báo lỗi</button> `;
   if(canEdit)h+=`<button class="btn ghost sm" onclick="openForm('${key}',${r.id})">Sửa</button> `;
   if(['SD','PA'].includes(ME.role))h+=`<button class="btn danger sm" onclick="delRow('${key}',${r.id})">Xóa</button>`;
