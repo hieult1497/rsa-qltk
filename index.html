@@ -176,7 +176,7 @@
 <!-- APP -->
 <div class="app" id="app" style="display:none">
   <aside class="side collapsed" id="side">
-    <div class="logo"><div class="dot">R</div><div><b>RSA QLTK</b><small>RS Agency · v2.8</small></div>
+    <div class="logo"><div class="dot">R</div><div><b>RSA QLTK</b><small>RS Agency · v2.9</small></div>
       <button class="hamb" id="hamb">☰</button></div>
     <div class="user"><div class="av" id="uAv">?</div><div><b id="uName">—</b><small id="uRole">—</small></div>
       <div style="margin-left:auto;display:flex;gap:8px"><div class="out" id="btnTheme" title="Đổi màu">◐</div><div class="out" id="btnOut" title="Đăng xuất">⎋</div></div></div>
@@ -280,7 +280,9 @@ async function boot(){
   await loadCats();
   await loadMenuPerms();
   buildNav();
-  go('dash');
+  let last='dash';try{last=localStorage.getItem('rsa_view')||'dash';}catch(e){}
+  const nav=NAV.find(n=>n.key===last);
+  go(nav&&menuAllowed(nav,ME.role)?last:'dash');
   refreshNotiBadge();
 }
 function show(w){$('login').classList.toggle('hide',w!=='login');$('pending').classList.toggle('hide',w!=='pending');$('app').style.display=w==='app'?'flex':'none';}
@@ -471,6 +473,7 @@ function buildNav(){
 }
 function setActive(key){document.querySelectorAll('.nav a').forEach(a=>a.classList.toggle('active',a.dataset.go===key));$('side').classList.add('collapsed');}
 async function go(key){
+  try{localStorage.setItem('rsa_view',key);}catch(e){}
   setActive(key);
   if(key==='dash')return renderDash();
   if(key==='noti')return renderNoti();
