@@ -176,10 +176,11 @@
 <!-- APP -->
 <div class="app" id="app" style="display:none">
   <aside class="side collapsed" id="side">
-    <div class="logo"><div class="dot">R</div><div><b>RSA QLTK</b><small>RS Agency · v2.4</small></div>
+    <div class="logo"><div class="dot">R</div><div><b>RSA QLTK</b><small>RS Agency · v2.6</small></div>
       <button class="hamb" id="hamb">☰</button></div>
     <div class="user"><div class="av" id="uAv">?</div><div><b id="uName">—</b><small id="uRole">—</small></div>
       <div style="margin-left:auto;display:flex;gap:8px"><div class="out" id="btnTheme" title="Đổi màu">◐</div><div class="out" id="btnOut" title="Đăng xuất">⎋</div></div></div>
+    <div style="padding:0 4px 8px"><input id="gsearch" placeholder="🔍 Tìm nhanh TK / case / seller" onkeydown="if(event.key==='Enter')globalSearch(this.value)" style="width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:8px 10px;color:var(--text);font-size:12.5px"></div>
     <nav class="nav" id="nav"></nav>
   </aside>
   <main class="main">
@@ -219,7 +220,8 @@ const SUPABASE_URL='https://oaeywvuibltnokdkbpvg.supabase.co';
 const SUPABASE_KEY='sb_publishable_UW_EwaozbQ_ZiI4-COHFKg_yPOTKT5A';
 const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 let ME=null, CACHE={}, CATS={}, ACCOUNTS=[], PERMS={};
-let DF={seller:'',plat:'',src:'',period:'all',from:'',to:''}; // bộ lọc chung của Tổng quan
+let DF=(()=>{try{return Object.assign({seller:'',plat:'',src:'',period:'all',from:'',to:''},JSON.parse(localStorage.getItem('rsa_df')||'{}'));}catch(e){return {seller:'',plat:'',src:'',period:'all',from:'',to:''};}})(); // bộ lọc chung, nhớ theo máy
+let SORT={}; // {module:{col,dir}}
 const ROLE_LABEL={SD:'SD',QL:'Leader',PA:'Quản lý tài khoản',SELLER:'Seller',FFM:'Media',PENDING:'Chờ duyệt'};
 const rlabel=r=>ROLE_LABEL[r]||r;
 
@@ -520,7 +522,7 @@ async function renderModule(key){
       ${(cfg.filters||cfg.sellerScope||key==='expenses')?`<button class="btn ghost sm" onclick="clearModFilters('${key}')">Xóa lọc</button>`:''}
       <span class="cnt" id="modCount"></span></div>
     <div class="card" style="padding:0"><div class="tbl-wrap"><table>
-      <thead><tr>${canDel?'<th style="width:30px"><input type="checkbox" id="selAll" onclick="toggleAll(\''+key+'\',this.checked)"></th>':''}${cfg.cols.map(c=>`<th>${colLabel(cfg,c)}</th>`).join('')}${showAct?'<th></th>':''}</tr></thead>
+      <thead><tr>${canDel?'<th style="width:30px"><input type="checkbox" id="selAll" onclick="toggleAll(\''+key+'\',this.checked)"></th>':''}${cfg.cols.map(c=>{const s=SORT[key];const ar=s&&s.col===c?(s.dir>0?' ▲':' ▼'):'';const sortable=!['subacc','stageBar'].includes(c);return `<th ${sortable?`class="sortable" onclick="sortMod('${key}','${c}')"`:''}>${colLabel(cfg,c)}${ar}</th>`;}).join('')}${showAct?'<th></th>':''}</tr></thead>
       <tbody id="modBody"></tbody></table>
       <div class="empty" id="modEmpty" style="display:none">Chưa có dữ liệu. ${canEdit?'Bấm "+ Thêm" hoặc Nhập Excel.':''}</div>
     </div></div>`;
@@ -537,12 +539,25 @@ async function renderModule(key){
       const vs=[...new Set((data||[]).map(r=>r[ft[0]]).filter(Boolean))].sort();
       $('mf_'+ft[0]).innerHTML=`<option value="">${ft[1]}</option>`+vs.map(o=>`<option>${esc(o)}</option>`).join('');
     }});
+  restoreModFilters(key);
   paintRows(key);
 }
 function clearModFilters(key){
   ['modSearch','modSeller','modGroup','modFrom','modTo'].forEach(id=>{if($(id))$(id).value='';});
   (MODULES[key].filters||[]).forEach(ft=>{if($('mf_'+ft[0]))$('mf_'+ft[0]).value='';});
-  paintRows(key);
+  localStorage.removeItem('flt_'+key);paintRows(key);
+}
+function sortMod(key,col){const s=SORT[key];SORT[key]=(s&&s.col===col)?{col,dir:-s.dir}:{col,dir:1};paintRows(key);}
+function saveModFilters(key){
+  const st={search:$('modSearch')?.value||'',seller:$('modSeller')?.value||'',group:$('modGroup')?.value||'',from:$('modFrom')?.value||'',to:$('modTo')?.value||''};
+  (MODULES[key].filters||[]).forEach(ft=>{st['mf_'+ft[0]]=$('mf_'+ft[0])?.value||'';});
+  try{localStorage.setItem('flt_'+key,JSON.stringify(st));}catch(e){}
+}
+function restoreModFilters(key){
+  let st;try{st=JSON.parse(localStorage.getItem('flt_'+key)||'null');}catch(e){}if(!st)return;
+  const set=(id,v)=>{if($(id)&&v)$(id).value=v;};
+  set('modSearch',st.search);set('modSeller',st.seller);set('modGroup',st.group);set('modFrom',st.from);set('modTo',st.to);
+  (MODULES[key].filters||[]).forEach(ft=>set('mf_'+ft[0],st['mf_'+ft[0]]));
 }
 function colLabel(cfg,c){
   const map={account_label:'TK',platform:'Sàn',seller:'Seller',sla:'SLA',wait:'Chờ (ngày)',exp:'Còn lại',stageBar:'Giai đoạn',subacc:'TK phân quyền'};
@@ -560,6 +575,11 @@ function paintRows(key){
   const df=$('modFrom')?$('modFrom').value:'',dt=$('modTo')?$('modTo').value:'';
   if(df)rows=rows.filter(r=>(r.expense_date||'')>=df);
   if(dt)rows=rows.filter(r=>(r.expense_date||'')<=dt);
+  saveModFilters(key);
+  const s=SORT[key];
+  if(s){rows.sort((a,b)=>{let x=a[s.col],y=b[s.col];const nx=Number(x),ny=Number(y);
+    if(!isNaN(nx)&&!isNaN(ny)&&x!==''&&x!=null&&y!==''&&y!=null){return (nx-ny)*s.dir;}
+    return String(x??'').localeCompare(String(y??''),'vi')*s.dir;});}
   const canEdit=['SD','PA'].includes(ME.role);
   const showAct=canEdit||key==='requests'||(key==='accounts'&&ME.role==='SELLER');
   let cnt=rows.length+' dòng';
@@ -615,11 +635,13 @@ function cellVal(cfg,r,c){
   if(c==='exp'){const k=r.date_end||r.renew_date||r.data_expiry;const d=daysBetween(todayStr(),k);if(!k)return '<span class="chip mut">—</span>';if(d<0)return '<span class="chip red">hết hạn</span>';return `<span class="chip ${d<=7?'amber':'green'}">${d}d</span>`;}
   if(c==='stageBar'){return badge(cfg,'stage',r.stage);}
   if(c==='subacc'){const subs=(window.SUBMAP&&window.SUBMAP[r.id])||[];const act=subs.filter(s=>s.status==='Đang dùng').length;
-    if(!subs.length)return '<span class="chip mut">—</span>';
+    const canEdit=['SD','PA'].includes(ME.role);
+    if(!subs.length)return canEdit?`<span class="chip blue lnk" onclick="event.stopPropagation();showSubs(${r.id})">+ thêm</span>`:'<span class="chip mut">—</span>';
     return `<span class="chip green lnk" onclick="event.stopPropagation();showSubs(${r.id})">🔑 ${act}/${subs.length}</span>`;}
   const f=cfg.fields.find(x=>x.k===c);
   let v=r[c];
   if(cfg.badges&&cfg.badges[c]){let h=badge(cfg,c,v);if(c==='status'&&cfg.table==='accounts'&&window.OPEN_KH&&window.OPEN_KH.has(r.id))h+=' <span class="chip purple">⚖ kháng</span>';return h;}
+  if(c==='name'&&cfg.table==='accounts')return `<span class="lnk" onclick="event.stopPropagation();openAccProfile(${r.id})"><b>${esc(v||'')}</b></span>`;
   if(f&&f.t==='num'){if(c.endsWith('_vnd'))return `<span class="num">${fmtVnd(v)}</span>`;if(c.endsWith('_usd'))return `<span class="num">${fmtUsd(v)}</span>`;return v??'';}
   if(f&&f.sensitive&&ME.role==='SELLER')return '<span class="chip mut">ẩn</span>';
   return esc(v==null?'':String(v).slice(0,40));
@@ -727,6 +749,57 @@ async function reqApprove(id,ok){
   if(error)return toast('Lỗi: '+error.message);
   await logAct(ok?'Duyệt cấp TK':'Từ chối cấp TK','account_requests',id,'');
   toast(ok?'Đã duyệt ✓':'Đã từ chối');renderModule('requests');
+}
+async function openAccProfile(id){
+  $('drillTitle').textContent='Đang tải hồ sơ TK...';$('drillBody').innerHTML='';$('drillModal').classList.add('show');
+  const [aR,subR,caseR,logR]=await Promise.all([
+    sb.from('accounts').select('*').eq('id',id).single(),
+    sb.from('sub_accounts').select('*').eq('account_id',id),
+    sb.from('cases').select('*').eq('account_id',id).order('date_start',{ascending:false}),
+    sb.from('account_status_log').select('*').eq('account_id',id).order('changed_at',{ascending:false})]);
+  const a=aR.data;if(!a){$('drillBody').innerHTML='<div class="empty">Không tải được TK.</div>';return;}
+  const subs=subR.data||[],cases=caseR.data||[],logs=logR.data||[];
+  const canEdit=['SD','PA'].includes(ME.role);
+  $('drillTitle').textContent=a.name+' ('+a.platform+')';
+  const row=(l,v)=>`<div><div class="label muted" style="font-size:11px">${l}</div><div>${v||'—'}</div></div>`;
+  $('drillBody').innerHTML=`
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px">
+      ${row('Trạng thái',badge(MODULES.accounts,'status',a.status)+(window.OPEN_KH&&window.OPEN_KH.has(a.id)?' <span class="chip purple">⚖ kháng</span>':''))}
+      ${row('Seller',esc(a.seller))}
+      ${row('Nguồn',esc(a.source))}
+      ${row('Email',esc(a.email))}
+      ${row('Ngày cấp',esc(a.assigned_date))}
+      ${row('Hết bảo hành',esc(a.warranty_end))}
+      ${canEdit?row('Balance ($)','$'+fmtUsd(a.balance_usd)):''}
+      ${canEdit?row('On-hold ($)','<b style="color:'+(num(a.onhold_usd)>0?'var(--red)':'inherit')+'">$'+fmtUsd(a.onhold_usd)+'</b>'):''}
+      ${row('Lỗi',esc(a.error_type))}
+    </div>
+    ${canEdit?`<div style="margin-bottom:14px"><button class="btn sm" onclick="$('drillModal').classList.remove('show');openQuickTT(${a.id})">Đổi trạng thái</button>
+      <button class="btn ghost sm" onclick="$('drillModal').classList.remove('show');openForm('accounts',${a.id})">Sửa TK</button></div>`:''}
+    <div style="font-weight:600;margin:10px 0 6px">🔑 TK phân quyền (${subs.length})</div>
+    ${subs.length?`<table><thead><tr><th>Đăng nhập</th><th>Cấp cho</th><th>Trạng thái</th></tr></thead><tbody>${subs.map(s=>`<tr><td>${esc(s.login_id)}</td><td>${esc(s.granted_to||'')}</td><td>${badge(MODULES.sub_accounts,'status',s.status)}</td></tr>`).join('')}</tbody></table>`:'<div class="muted small" style="margin-bottom:8px">Chưa có.</div>'}
+    <div style="font-weight:600;margin:14px 0 6px">⚖ Case (${cases.length})</div>
+    ${cases.length?`<table><thead><tr><th>Loại lỗi</th><th>Ngày</th><th>Trạng thái</th></tr></thead><tbody>${cases.map(c=>`<tr><td>${esc(c.error_type)}</td><td>${esc(c.date_start)}</td><td>${badge(MODULES.cases,'status',c.status)}</td></tr>`).join('')}</tbody></table>`:'<div class="muted small" style="margin-bottom:8px">Chưa có.</div>'}
+    <div style="font-weight:600;margin:14px 0 6px">🕘 Lịch sử trạng thái (${logs.length})</div>
+    ${logs.length?`<table><thead><tr><th>Thời gian</th><th>Đổi</th><th>Người đổi</th></tr></thead><tbody>${logs.map(l=>`<tr><td>${new Date(l.changed_at).toLocaleString('vi-VN')}</td><td>${esc(l.old_status||'?')} → <b>${esc(l.new_status)}</b></td><td>${esc(l.changed_by_name||'')}</td></tr>`).join('')}</tbody></table>`:'<div class="muted small">Chưa có.</div>'}`;
+}
+async function globalSearch(term){
+  term=(term||'').trim();if(term.length<2){toast('Gõ ít nhất 2 ký tự');return;}
+  $('drillTitle').textContent='Tìm: "'+term+'"';$('drillBody').innerHTML='Đang tìm...';$('drillModal').classList.add('show');
+  const like='%'+term+'%';
+  const [accR,caseR,subR]=await Promise.all([
+    sb.from('accounts').select('id,name,platform,seller,status,email').or(`name.ilike.${like},email.ilike.${like},seller.ilike.${like}`).limit(40),
+    sb.from('cases').select('id,account_id,seller,error_type,status').ilike('error_type',like).limit(20),
+    sb.from('sub_accounts').select('id,account_id,login_id,granted_to,status').ilike('login_id',like).limit(20)]);
+  const accs=accR.data||[],cases=caseR.data||[],subs=subR.data||[];
+  let html='';
+  if(accs.length){html+='<div style="font-weight:600;margin:8px 0 6px">Tài khoản ('+accs.length+')</div>'+
+    accs.map(a=>`<div class="drill-hit lnk" style="padding:7px 0;border-bottom:1px solid var(--line)" onclick="$('drillModal').classList.remove('show');openAccProfile(${a.id})"><b>${esc(a.name)}</b> <span class="muted">· ${a.platform} · ${esc(a.seller||'')} · ${badge(MODULES.accounts,'status',a.status)}</span></div>`).join('');}
+  if(cases.length){html+='<div style="font-weight:600;margin:12px 0 6px">Case ('+cases.length+')</div>'+
+    cases.map(c=>`<div style="padding:6px 0;border-bottom:1px solid var(--line)">${esc(c.error_type)} <span class="muted">· ${esc(c.seller||'')} · ${c.status}</span> <span class="lnk" onclick="$('drillModal').classList.remove('show');openAccProfile(${c.account_id})">xem TK ›</span></div>`).join('');}
+  if(subs.length){html+='<div style="font-weight:600;margin:12px 0 6px">TK phân quyền ('+subs.length+')</div>'+
+    subs.map(s=>`<div style="padding:6px 0;border-bottom:1px solid var(--line)">${esc(s.login_id)} <span class="muted">· cấp cho ${esc(s.granted_to||'')}</span> <span class="lnk" onclick="$('drillModal').classList.remove('show');openAccProfile(${s.account_id})">xem TK ›</span></div>`).join('');}
+  $('drillBody').innerHTML=html||'<div class="empty">Không tìm thấy gì khớp "'+esc(term)+'".</div>';
 }
 function showSubs(accId){
   const acc=ACCOUNTS.find(a=>a.id===accId)||(MOD_STATE['accounts']||[]).find(a=>a.id===accId);
@@ -866,6 +939,7 @@ $('impCommit').onclick=async()=>{
 
 /* ============ DASHBOARD ============ */
 async function renderDash(){
+  try{localStorage.setItem('rsa_df',JSON.stringify(DF));}catch(e){}
   const isStaff=['SD','QL','PA'].includes(ME.role), isMedia=ME.role==='FFM', isSeller=ME.role==='SELLER';
   const sub=isStaff?'Lọc áp cho mọi khối · TK theo ngày cấp/mua · case theo ngày phát sinh · chi phí theo ngày chi'
     :isMedia?'Bạn xem tình trạng tài khoản để chủ động dừng/làm video'
@@ -899,10 +973,11 @@ async function renderDash(){
       ${isStaff?`<div class="card"><h3>Pipeline TK mới</h3><div id="pipeBox"></div></div>`:''}
       <div class="card"><h3>Cảnh báo cao <span class="tag">cần xử ngay</span></h3><div id="dashAlerts"></div></div>
     </div>`:'';
+  const cardTrend=isStaff?`<div class="grid" style="grid-template-columns:1fr;margin-top:14px"><div class="card"><h3>Xu hướng active theo tuần <span class="tag">từ snapshot mỗi tuần</span></h3><canvas id="trendChart" style="max-height:230px"></canvas><div class="empty" id="trendEmpty" style="display:none">Cần vài tuần dữ liệu để vẽ đường xu hướng.</div></div></div>`:'';
   $('pageArea').innerHTML=`<div class="topbar"><div><h1>Tổng quan</h1><div class="sub">${sub}</div></div></div>
     ${filterBar}
     <div class="grid kpis" id="kpis"></div>
-    ${cardSellerSrc}${cardFin}${cardBottom}`;
+    ${cardSellerSrc}${cardTrend}${cardFin}${cardBottom}`;
   const [accR,caseR,reqR,pipeR,expR]=await Promise.all([
     sb.from('accounts').select('*'),sb.from('cases').select('*'),
     sb.from('account_requests').select('*'),sb.from('pipeline_batches').select('*'),
@@ -929,6 +1004,7 @@ async function renderDash(){
       const {error}=await sb.from('weekly_snapshots').insert(row);if(!error)snaps.push(row);
     }
   }
+  if($('trendChart'))drawTrend(snaps);
   const prev=snaps.filter(s=>s.week_start<wk).pop();
   const delta=(cur,pv,inverse)=>{if(filtering||!prev||pv==null)return '—';const d=cur-num(pv);if(!d)return '= tuần trước';const good=inverse?d<0:d>0;return `<span class="${good?'up':'down'}">${d>0?'↑':'↓'}${Math.abs(d)} so tuần trước</span>`;};
   $('kpis').innerHTML=[
@@ -987,6 +1063,22 @@ async function renderDash(){
     updateAlertBadge(al);}
 }
 
+let _trendChart=null;
+function drawTrend(snaps){
+  const rows=(snaps||[]).slice().sort((a,b)=>a.week_start<b.week_start?-1:1);
+  const empty=$('trendEmpty'),cv=$('trendChart');
+  if(rows.length<2){if(empty)empty.style.display='block';if(cv)cv.style.display='none';return;}
+  if(empty)empty.style.display='none';if(cv)cv.style.display='block';
+  const labels=rows.map(s=>s.week_start.slice(5));
+  const total=rows.map(s=>num(s.tts_active)+num(s.amz_active)+num(s.etsy_active)+num(s.other_active));
+  const muted=getComputedStyle(document.body).getPropertyValue('--muted').trim()||'#8b92a7';
+  const ds=(lbl,key,col)=>({label:lbl,data:rows.map(s=>num(s[key])),borderColor:col,backgroundColor:col,tension:.3,pointRadius:3});
+  if(_trendChart)_trendChart.destroy();
+  _trendChart=new Chart(cv,{type:'line',
+    data:{labels,datasets:[{label:'Tổng active',data:total,borderColor:'#3ecf8e',backgroundColor:'#3ecf8e',tension:.3,pointRadius:3,borderWidth:2},
+      ds('TTS','tts_active','#5b8cff'),ds('AMZ','amz_active','#f2c14e'),ds('Etsy','etsy_active','#9b7bff'),ds('Die/Susp','die_total','#f06a6a')]},
+    options:{plugins:{legend:{labels:{color:muted,boxWidth:12,font:{size:11}}}},scales:{x:{ticks:{color:muted},grid:{display:false}},y:{ticks:{color:muted},grid:{color:'rgba(128,128,128,.12)'}}}}});
+}
 function dashDrill(code,val){
   const A=window._dashAccs||[];let list=[],title='';
   const ACT=x=>x.status==='Active',DEAD=x=>['Die','Suspend'].includes(x.status);
@@ -1067,7 +1159,7 @@ async function buildNotiItems(){
   (caseR.data||[]).forEach(c=>{
     if(new Date(c.created_at).getTime()<since)return;
     const care=['SD','QL','PA','FFM','SELLER'];if(!care.includes(r))return;
-    items.push({key:'case:'+c.id,ic:'⚠',lv:['Thất bại','Dừng'].includes(c.status)?'hi':'mid',
+    items.push({key:'case:'+c.id,cat:'Seller báo lỗi',src:'cases',ic:'⚠',lv:['Thất bại','Dừng'].includes(c.status)?'hi':'mid',
       t:`Báo lỗi TK ${nm(c.account_id)}`,w:`${c.seller||''} · ${c.error_type||''} · ${c.status}`,ts:c.created_at});
   });
   // 2) LOG đổi trạng thái. Media + Seller + PA/QL/SD
@@ -1075,35 +1167,47 @@ async function buildNotiItems(){
     if(new Date(l.changed_at).getTime()<since)return;
     const risk=['Die','Suspend'].includes(l.new_status);
     if(r==='FFM'&&!risk&&l.new_status!=='Active')return; // Media chỉ quan tâm khóa/hồi
-    items.push({key:'slog:'+l.id,ic:risk?'🔴':(l.new_status==='Active'?'🟢':'🔵'),lv:risk?'hi':'lo',
+    items.push({key:'slog:'+l.id,cat:risk?'TK bị khóa/lỗi':(l.new_status==='Active'?'TK hoạt động lại':'Đổi trạng thái khác'),src:'accounts',
+      ic:risk?'🔴':(l.new_status==='Active'?'🟢':'🔵'),lv:risk?'hi':'lo',
       t:`TK ${nm(l.account_id)}: ${l.old_status||'?'} → ${l.new_status}`,
-      w:risk?(r==='FFM'?'Media dừng làm video kênh này':'Cần xử lý'):(l.new_status==='Active'?'TK hoạt động lại':''),
+      w:risk?(r==='FFM'?'Media dừng làm video kênh này':'Cần xử lý'):(l.new_status==='Active'?(r==='FFM'?'Media làm video lại':'TK hoạt động lại'):''),
       by:l.changed_by_name,ts:l.changed_at});
   });
   // 3) YÊU CẦU CẤP TK. created→PA/QL/SD ; quyết định/cấp→Seller + PA
   (reqR.data||[]).forEach(q=>{
     const created=q.created_at||q.request_date;
     if(created&&new Date(created).getTime()>=since&&['SD','QL','PA'].includes(r))
-      items.push({key:'reqnew:'+q.id,ic:'✉',lv:'lo',t:`Yêu cầu cấp TK: ${q.seller}`,w:`${q.account_type} · ${q.reason||''}`,ts:created});
+      items.push({key:'reqnew:'+q.id,cat:'Yêu cầu cấp TK',src:'requests',ic:'✉',lv:'lo',t:`Yêu cầu cấp TK: ${q.seller}`,w:`${q.account_type} · ${q.reason||''}`,ts:created});
     if(q.approval_status&&q.approval_status!=='Chờ duyệt'&&q.approved_at){
       if(['SD','QL','PA','SELLER'].includes(r))
-        items.push({key:'reqdec:'+q.id+':'+q.approval_status,ic:q.approval_status==='Đã duyệt'?'✅':'❌',lv:'lo',
+        items.push({key:'reqdec:'+q.id+':'+q.approval_status,cat:'Kết quả duyệt yêu cầu',src:'requests',ic:q.approval_status==='Đã duyệt'?'✅':'❌',lv:'lo',
           t:`Yêu cầu của ${q.seller} · ${q.approval_status}`,w:q.reject_reason||q.account_type,ts:q.approved_at});
     }
     if(q.issue_status==='Đã cấp'&&['SELLER','PA'].includes(r))
-      items.push({key:'reqiss:'+q.id,ic:'🎁',lv:'lo',t:`Đã cấp TK cho ${q.seller}`,w:q.issued_date||'',ts:q.issued_date||q.approved_at});
+      items.push({key:'reqiss:'+q.id,cat:'Đã cấp TK',src:'requests',ic:'🎁',lv:'lo',t:`Đã cấp TK cho ${q.seller}`,w:q.issued_date||'',ts:q.issued_date||q.approved_at});
   });
   items.sort((a,b)=>new Date(b.ts||0)-new Date(a.ts||0));
   return items;
 }
+const NOTI_CAT_ORDER=['TK bị khóa/lỗi','Seller báo lỗi','TK hoạt động lại','Yêu cầu cấp TK','Kết quả duyệt yêu cầu','Đã cấp TK','Đổi trạng thái khác'];
+function notiHtml(a,i){const seen=SEEN.has(a.key);const srcL=SRC_LABEL[a.src]||'';
+  return `<div class="alert ${a.lv} ${seen?'seen':''}"><div class="ic">${a.ic}</div><div style="min-width:0"><b>${esc(a.t)}</b><div class="who">${esc(a.w||'')}${a.by?' · '+esc(a.by):''} · ${new Date(a.ts).toLocaleString('vi-VN')}${srcL?` · <span class="chip mut" style="font-size:9px">${srcL}</span>`:''}</div></div><div style="display:flex;gap:6px;align-items:center;white-space:nowrap">${a.src?`<button class="btn ghost sm" onclick="event.stopPropagation();go('${a.src}')">Mở ›</button>`:''}<span class="lnk" style="font-size:12px;color:var(--muted)" onclick="markNoti(this,${i})">${seen?'✓ đã đọc':'đánh dấu đã đọc'}</span></div></div>`;}
 async function renderNoti(){
-  $('pageArea').innerHTML=`<div class="topbar"><div><h1>Thông báo</h1><div class="sub">Việc liên quan bộ phận của bạn · 30 ngày gần nhất</div></div>
+  $('pageArea').innerHTML=`<div class="topbar"><div><h1>Thông báo</h1><div class="sub">Việc liên quan bộ phận của bạn · gom theo loại · 30 ngày gần nhất</div></div>
     <button class="btn ghost sm" onclick="markAllNoti()">✓ Đánh dấu tất cả đã đọc</button></div><div id="notiList" class="muted">Đang tải...</div>`;
   await loadSeen();const items=await buildNotiItems();window._notis=items;
-  $('notiList').innerHTML=items.length?items.map((a,i)=>`<div class="alert ${a.lv} ${SEEN.has(a.key)?'seen':''}" onclick="markNoti(this,${i})"><div class="ic">${a.ic}</div><div><b>${esc(a.t)}</b><div class="who">${esc(a.w||'')}${a.by?' · '+esc(a.by):''} · ${new Date(a.ts).toLocaleString('vi-VN')}</div></div>${SEEN.has(a.key)?'<span class="seen-tag">✓ đã đọc</span>':'<span class="who">mới</span>'}</div>`).join(''):'<div class="card empty">Chưa có thông báo nào.</div>';
+  if(!items.length){$('notiList').innerHTML='<div class="card empty">Chưa có thông báo nào.</div>';updateNotiBadge(items);return;}
+  const idx=new Map();items.forEach((a,i)=>idx.set(a,i));
+  const cats=[...NOTI_CAT_ORDER,...[...new Set(items.map(a=>a.cat))].filter(c=>!NOTI_CAT_ORDER.includes(c))];
+  let html='';
+  cats.forEach(cat=>{const arr=items.filter(a=>a.cat===cat);if(!arr.length)return;
+    const unseen=arr.filter(a=>!SEEN.has(a.key)).length;const dot=arr[0].ic;
+    html+=`<div style="margin:16px 0 8px;display:flex;align-items:center;gap:8px"><b style="font-size:14px">${dot} ${esc(cat)}</b><span class="chip ${unseen?'red':'mut'}">${arr.length} mục${unseen?` · ${unseen} mới`:''}</span></div>`;
+    html+=arr.map(a=>notiHtml(a,idx.get(a))).join('');});
+  $('notiList').innerHTML=html;
   updateNotiBadge(items);
 }
-async function markNoti(el,i){const a=(window._notis||[])[i];if(!a)return;SEEN.add(a.key);el.classList.add('seen');try{await sb.from('alert_seen').insert({alert_key:a.key.slice(0,300),user_id:ME.id});}catch(e){}updateNotiBadge(window._notis);}
+async function markNoti(el,i){const a=(window._notis||[])[i];if(!a)return;SEEN.add(a.key);const card=el.closest('.alert');if(card)card.classList.add('seen');el.textContent='✓ đã đọc';try{await sb.from('alert_seen').insert({alert_key:a.key.slice(0,300),user_id:ME.id});}catch(e){}updateNotiBadge(window._notis);}
 async function markAllNoti(){for(const a of (window._notis||[])){if(!SEEN.has(a.key)){SEEN.add(a.key);try{await sb.from('alert_seen').insert({alert_key:a.key.slice(0,300),user_id:ME.id});}catch(e){}}}renderNoti();toast('Đã đánh dấu tất cả đã đọc ✓');}
 function updateNotiBadge(items){const cnt=(items||[]).filter(a=>!SEEN.has(a.key)).length;const b=$('navNoti');if(b){b.textContent=cnt;b.style.display=cnt?'inline-block':'none';}}
 async function refreshNotiBadge(){try{await loadSeen();const items=await buildNotiItems();updateNotiBadge(items);}catch(e){}}
