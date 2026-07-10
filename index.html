@@ -176,7 +176,7 @@
 <!-- APP -->
 <div class="app" id="app" style="display:none">
   <aside class="side collapsed" id="side">
-    <div class="logo"><div class="dot">R</div><div><b>RSA QLTK</b><small>RS Agency · v3.5</small></div>
+    <div class="logo"><div class="dot">R</div><div><b>RSA QLTK</b><small>RS Agency · v3.6</small></div>
       <button class="hamb" id="hamb">☰</button></div>
     <div class="user"><div class="av" id="uAv">?</div><div><b id="uName">—</b><small id="uRole">—</small></div>
       <div style="margin-left:auto;display:flex;gap:8px"><div class="out" id="btnTheme" title="Đổi màu">◐</div><div class="out" id="btnOut" title="Đăng xuất">⎋</div></div></div>
@@ -398,7 +398,7 @@ const MODULES={
     sellerScope:'seller', key:['seller','account_type','request_date'], userCol:'requested_by',
     fields:[
       {k:'seller',l:'Seller',t:'cat',cat:'seller',req:1},
-      {k:'account_type',l:'Loại TK cần',t:'sel',opts:['TTS','AMZ','Etsy','Kênh trắng','Gmail','Khác'],req:1},
+      {k:'account_type',l:'Loại TK cần (chọn nhiều loại + số lượng)',t:'multiqty',req:1},
       {k:'reason',l:'Lý do',t:'text',req:1},
       {k:'request_date',l:'Ngày yêu cầu',t:'date',req:1},
       {k:'approval_status',l:'Trạng thái duyệt',t:'sel',opts:['Chờ duyệt','Đã duyệt','Từ chối'],roles:['SD']},
@@ -409,7 +409,7 @@ const MODULES={
       {k:'note',l:'Ghi chú',t:'textarea',full:1},
     ],
     cols:['seller','account_type','reason','request_date','wait','approval_status','issue_status'],
-    filters:[['approval_status','Tất cả duyệt',()=>['Chờ duyệt','Đã duyệt','Từ chối']],['issue_status','Tất cả cấp',()=>['Chưa','Đã cấp','Không có nguồn']],['account_type','Tất cả loại',()=>['TTS','AMZ','Etsy','Kênh trắng','Gmail','Khác']]],
+    filters:[['approval_status','Tất cả duyệt',()=>['Chờ duyệt','Đã duyệt','Từ chối']],['issue_status','Tất cả cấp',()=>['Chưa','Đã cấp','Không có nguồn']]],
     badges:{approval_status:{'Đã duyệt':'green','Từ chối':'red','Chờ duyệt':'amber'},issue_status:{'Đã cấp':'green','Không có nguồn':'red','Chưa':'mut'}}},
   pipeline:{table:'pipeline_batches',title:'Pipeline TK mới',sub:'Đợt lập TK · 5 giai đoạn.',
     key:['batch_name'],
@@ -690,7 +690,9 @@ function openForm(key,id){
     if(f.k==='seller'&&cfg.table==='account_requests'&&ME.role==='SELLER')
       return `<div class="fld"><label>${esc(f.l)}</label><input id="ff_seller" value="${esc(ME.seller_name||'')}" disabled></div>`;
     let inp='';const v=row[f.k]??'';
-    if(f.t==='sel'||f.t==='cat'){
+    if(f.t==='multiqty'){
+      inp=`<div id="qtyWrap" style="display:flex;flex-direction:column;gap:6px"></div><button type="button" class="btn ghost sm" style="margin-top:6px" onclick="addQtyRow()">+ thêm loại</button>`;
+    }else if(f.t==='sel'||f.t==='cat'){
       const opts=f.t==='cat'?catOpts(f.cat):f.opts;
       inp=`<select id="ff_${f.k}"><option value=""></option>${opts.map(o=>`<option ${String(v)===String(o)?'selected':''}>${esc(o)}</option>`).join('')}</select>`;
     }else if(f.t==='acc'){
@@ -702,8 +704,24 @@ function openForm(key,id){
     }
     return `<div class="fld ${f.full?'full':''}"><label>${esc(f.l)}${f.req?' <span class="req">*</span>':''}</label>${inp}</div>`;
   }).join('');
+  if(cfg.fields.some(f=>f.t==='multiqty')){
+    let items=(row&&Array.isArray(row.items))?row.items:null;
+    if(!items&&row&&row.account_type)items=[{type:String(row.account_type).split(' x')[0].trim()||'TTS',qty:1}];
+    if(!items||!items.length)items=[{type:'TTS',qty:1}];
+    items.forEach(it=>addQtyRow(it.type,it.qty));
+  }
   $('modal').classList.add('show');
 }
+const QTY_TYPES=['TTS','AMZ','Etsy','Kênh trắng','Gmail','Khác'];
+function addQtyRow(type,qty){
+  const w=$('qtyWrap');if(!w)return;
+  const d=document.createElement('div');d.className='qr-row';d.style.cssText='display:flex;gap:6px;align-items:center';
+  d.innerHTML=`<select class="qr-type" style="flex:1">${QTY_TYPES.map(t=>`<option ${t===type?'selected':''}>${t}</option>`).join('')}</select>
+    <input type="number" class="qr-qty" min="1" value="${qty||1}" style="width:80px" title="Số lượng">
+    <button type="button" class="btn ghost sm" onclick="this.closest('.qr-row').remove()">✕</button>`;
+  w.appendChild(d);
+}
+function collectQty(){return [...document.querySelectorAll('#qtyWrap .qr-row')].map(d=>({type:d.querySelector('.qr-type').value,qty:num(d.querySelector('.qr-qty').value)||1})).filter(x=>x.qty>0);}
 function closeModal(){$('modal').classList.remove('show');}
 $('modalSave').onclick=async()=>{
   if(FORM_MODE==='tt'){
@@ -733,6 +751,12 @@ $('modalSave').onclick=async()=>{
   for(const f of cfg.fields){
     if(f.sensitive&&ME.role==='SELLER')continue;
     if(f.roles&&!f.roles.includes(ME.role))continue;
+    if(f.t==='multiqty'){
+      const items=collectQty();
+      if(f.req&&!items.length){$('modalErr').textContent='Chọn ít nhất 1 loại TK';return;}
+      out.items=items;out[f.k]=items.map(i=>`${i.type} x${i.qty}`).join(', ');
+      continue;
+    }
     const el=$('ff_'+f.k);if(!el)continue;let v=el.value;
     if(f.req&&!String(v).trim()){$('modalErr').textContent='Thiếu: '+f.l;return;}
     if(v==='')v=null;
