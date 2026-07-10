@@ -176,7 +176,7 @@
 <!-- APP -->
 <div class="app" id="app" style="display:none">
   <aside class="side collapsed" id="side">
-    <div class="logo"><div class="dot">R</div><div><b>RSA QLTK</b><small>RS Agency · v3.3</small></div>
+    <div class="logo"><div class="dot">R</div><div><b>RSA QLTK</b><small>RS Agency · v3.4</small></div>
       <button class="hamb" id="hamb">☰</button></div>
     <div class="user"><div class="av" id="uAv">?</div><div><b id="uName">—</b><small id="uRole">—</small></div>
       <div style="margin-left:auto;display:flex;gap:8px"><div class="out" id="btnTheme" title="Đổi màu">◐</div><div class="out" id="btnOut" title="Đăng xuất">⎋</div></div></div>
@@ -319,6 +319,20 @@ function menuAllowed(n,role){
 const PLAT=['TTS','AMZ','Etsy','Khác'];
 const ACC_STATUS=['Mới','Active','Suspend','Die','Thu hồi'];
 function accStatuses(){const c=catOpts('trang_thai_tk');return c.length?c:ACC_STATUS;}
+// Phân loại trạng thái theo từ khóa (cho cả trạng thái tùy chỉnh)
+function statusKind(s){s=(s||'').toString().toLowerCase().trim();
+  if(!s)return 'unknown';
+  if(s.includes('thu hồi'))return 'withdrawn';
+  if(s.includes('die')||s.includes('khóa')||s.includes('chết')||s.includes('deactivate'))return 'die';
+  if(s.includes('suspend')||s.includes('kháng'))return 'suspend';
+  if(s.includes('active'))return s==='active'?'active':'active_limit';
+  if(s.includes('mới')||s==='new')return 'new';
+  return 'other';}
+const KIND_RANK={active:0,active_limit:1,new:2,other:4,suspend:5,die:6,withdrawn:7,unknown:8};
+const KIND_COLOR={active:'green',active_limit:'green',new:'blue',suspend:'amber',die:'red',withdrawn:'mut',other:'mut',unknown:'mut'};
+function statusChip(v){const k=statusKind(v);return `<span class="chip ${KIND_COLOR[k]}">${esc(v||'—')}</span>`;}
+function isActiveLike(s){const k=statusKind(s);return k==='active'||k==='active_limit';}
+function isDeadLike(s){const k=statusKind(s);return k==='die'||k==='suspend';}
 const MODULES={
   accounts:{table:'accounts',title:'Tài khoản',sub:'Bảng lõi · mỗi dòng = 1 TK. 7 trường bắt buộc, còn lại điền dần.',
     sellerScope:'seller', key:['email','platform'], userCol:'created_by',
@@ -594,8 +608,7 @@ function paintRows(key){
   if(s){rows.sort((a,b)=>{let x=a[s.col],y=b[s.col];const nx=Number(x),ny=Number(y);
     if(!isNaN(nx)&&!isNaN(ny)&&x!==''&&x!=null&&y!==''&&y!=null){return (nx-ny)*s.dir;}
     return String(x??'').localeCompare(String(y??''),'vi')*s.dir;});}
-  else if(key==='accounts'){const RANK={'Active':0,'Mới':1,'Suspend':3,'Die':4,'Thu hồi':5};
-    rows.sort((a,b)=>((RANK[a.status]??2)-(RANK[b.status]??2))||String(a.name??'').localeCompare(String(b.name??''),'vi'));}
+  else if(key==='accounts'){rows.sort((a,b)=>(KIND_RANK[statusKind(a.status)]-KIND_RANK[statusKind(b.status)])||String(a.name??'').localeCompare(String(b.name??''),'vi'));}
   const canEdit=['SD','PA'].includes(ME.role);
   const showAct=canEdit||key==='requests'||(key==='accounts'&&ME.role==='SELLER');
   let cnt=rows.length+' dòng';
@@ -656,7 +669,8 @@ function cellVal(cfg,r,c){
     return `<span class="chip green lnk" onclick="event.stopPropagation();showSubs(${r.id})">🔑 ${act}/${subs.length}</span>`;}
   const f=cfg.fields.find(x=>x.k===c);
   let v=r[c];
-  if(cfg.badges&&cfg.badges[c]){let h=badge(cfg,c,v);if(c==='status'&&cfg.table==='accounts'&&window.OPEN_KH&&window.OPEN_KH.has(r.id))h+=' <span class="chip purple">⚖ kháng</span>';return h;}
+  if(c==='status'&&cfg.table==='accounts'){let h=statusChip(v);if(window.OPEN_KH&&window.OPEN_KH.has(r.id))h+=' <span class="chip purple">⚖ kháng</span>';return h;}
+  if(cfg.badges&&cfg.badges[c]){return badge(cfg,c,v);}
   if(c==='name'&&cfg.table==='accounts')return `<span class="lnk" onclick="event.stopPropagation();openAccProfile(${r.id})"><b>${esc(v||'')}</b></span>`;
   if(f&&f.t==='num'){if(c.endsWith('_vnd'))return `<span class="num">${fmtVnd(v)}</span>`;if(c.endsWith('_usd'))return `<span class="num">${fmtUsd(v)}</span>`;return v??'';}
   if(f&&f.sensitive&&ME.role==='SELLER')return '<span class="chip mut">ẩn</span>';
@@ -1000,7 +1014,7 @@ async function renderDash(){
       ${isStaff?`<div class="card"><h3>Pipeline TK mới</h3><div id="pipeBox"></div></div>`:''}
       <div class="card"><h3>Cảnh báo cao <span class="tag">cần xử ngay</span></h3><div id="dashAlerts"></div></div>
     </div>`:'';
-  const cardTrend=isStaff?`<div class="grid" style="grid-template-columns:1fr;margin-top:14px"><div class="card"><h3>Xu hướng active theo tuần <span class="tag">từ snapshot mỗi tuần</span></h3><canvas id="trendChart" style="max-height:230px"></canvas><div class="empty" id="trendEmpty" style="display:none">Cần vài tuần dữ liệu để vẽ đường xu hướng.</div></div></div>`:'';
+  const cardTrend=isStaff?`<div class="grid" style="grid-template-columns:1fr;margin-top:14px"><div class="card"><h3>Xu hướng theo tuần <span class="tag">🟢 đường xanh lên = tốt lên · 🔴 đường đỏ lên = nhiều TK hỏng</span></h3><canvas id="trendChart" style="max-height:210px"></canvas><div class="empty" id="trendEmpty" style="display:none">Cần ít nhất 2 tuần dữ liệu để vẽ. Tool tự chốt mỗi tuần — vài tuần nữa sẽ có đường.</div><div class="muted small" id="trendHint" style="text-align:center;margin-top:6px"></div></div></div>`:'';
   $('pageArea').innerHTML=`<div class="topbar"><div><h1>Tổng quan</h1><div class="sub">${sub}</div></div></div>
     ${filterBar}
     <div class="grid kpis" id="kpis"></div>
@@ -1018,10 +1032,10 @@ async function renderDash(){
   const pipes=(pipeR.data||[]).filter(p=>(!DF.plat||p.platform===DF.plat)&&tOK(p.start_date));
   const exps=(expR.data||[]).filter(e=>tOK(e.expense_date));
   window._dashAccs=accs;
-  const act=(p)=>accs.filter(a=>a.status==='Active'&&a.platform===p).length;
-  const dead=accs.filter(a=>['Die','Suspend'].includes(a.status)).length;
-  const actAll=(p)=>all.filter(a=>a.status==='Active'&&a.platform===p).length;
-  const deadAll=all.filter(a=>['Die','Suspend'].includes(a.status)).length;
+  const act=(p)=>accs.filter(a=>isActiveLike(a.status)&&a.platform===p).length;
+  const dead=accs.filter(a=>isDeadLike(a.status)).length;
+  const actAll=(p)=>all.filter(a=>isActiveLike(a.status)&&a.platform===p).length;
+  const deadAll=all.filter(a=>isDeadLike(a.status)).length;
   // snapshot tuần: LUÔN chốt theo số không lọc
   const wk=mondayOf(new Date());let snaps=[];
   if(ME.role!=='SELLER'){
@@ -1043,14 +1057,14 @@ async function renderDash(){
   ].map(([l,v,d,c,cls])=>`<div class="card kpi clk" onclick="dashDrill('${c}')" title="Bấm xem danh sách"><div class="label">${l}</div><div class="val ${cls}">${v}</div><div class="delta">${d}</div></div>`).join('');
   // seller table
   const sellers=[...new Set(accs.map(a=>a.seller).filter(Boolean))];
-  let sRows=sellers.map(s=>{const list=accs.filter(a=>a.seller===s);const a=list.filter(x=>x.status==='Active').length;const d=list.filter(x=>['Die','Suspend','Thu hồi'].includes(x.status)).length;const n=list.length;const tot=a+d;const rate=tot?Math.round(a/tot*100):0;
+  let sRows=sellers.map(s=>{const list=accs.filter(a=>a.seller===s);const a=list.filter(x=>isActiveLike(x.status)).length;const d=list.filter(x=>isDeadLike(x.status)||statusKind(x.status)==='withdrawn').length;const n=list.length;const tot=a+d;const rate=tot?Math.round(a/tot*100):0;
     return {s,a,d,n,tot,rate};}).sort((x,y)=>y.n-x.n);
   const sumA=sRows.reduce((x,r)=>x+r.a,0),sumD=sRows.reduce((x,r)=>x+r.d,0),sumT=sRows.reduce((x,r)=>x+r.tot,0),sumN=sRows.reduce((x,r)=>x+r.n,0);
   const sumRate=sumT?Math.round(sumA/sumT*100):0;
   if($('sellerTbl'))$('sellerTbl').innerHTML=`<thead><tr><th>Seller</th><th class="num">Active</th><th class="num">Die</th><th class="num">Cấp</th><th class="num">Tổng TK</th><th class="num">Giữ TK</th></tr></thead><tbody>${sRows.map(r=>`<tr><td>${esc(r.s)}</td><td class="num lnk" onclick="dashDrill('sel_a','${esc(r.s)}')">${r.a}</td><td class="num lnk" onclick="dashDrill('sel_d','${esc(r.s)}')">${r.d}</td><td class="num lnk" onclick="dashDrill('sel_cap','${esc(r.s)}')">${r.tot}</td><td class="num lnk" onclick="dashDrill('sel_all','${esc(r.s)}')"><b>${r.n}</b></td><td class="num"><span class="chip ${r.rate>=80?'green':r.rate>=60?'amber':'red'}">${r.rate}%</span></td></tr>`).join('')||'<tr><td colspan="6" class="empty">Chưa có TK</td></tr>'}${sRows.length?`<tr><td><b>Tổng cộng</b></td><td class="num"><b>${sumA}</b></td><td class="num"><b>${sumD}</b></td><td class="num"><b>${sumT}</b></td><td class="num"><b>${sumN}</b></td><td class="num"><span class="chip ${sumRate>=80?'green':sumRate>=60?'amber':'red'}">${sumRate}%</span></td></tr>`:''}</tbody>`;
   // source table
   const srcs=[...new Set(accs.map(a=>a.source).filter(Boolean))];
-  let srcRows=srcs.map(s=>{const list=accs.filter(a=>a.source===s);const a=list.filter(x=>x.status==='Active').length;const tot=list.length;const rate=tot?Math.round(a/tot*100):0;return {s,a,tot,rate};}).sort((x,y)=>y.tot-x.tot);
+  let srcRows=srcs.map(s=>{const list=accs.filter(a=>a.source===s);const a=list.filter(x=>isActiveLike(x.status)).length;const tot=list.length;const rate=tot?Math.round(a/tot*100):0;return {s,a,tot,rate};}).sort((x,y)=>y.tot-x.tot);
   if($('srcTbl'))$('srcTbl').innerHTML=`<thead><tr><th>Nguồn</th><th class="num">Active</th><th class="num">Tổng</th><th class="num">Sống</th></tr></thead><tbody>${srcRows.map(r=>`<tr><td>${esc(r.s)}</td><td class="num lnk" onclick="dashDrill('src_a','${esc(r.s)}')">${r.a}</td><td class="num lnk" onclick="dashDrill('src_all','${esc(r.s)}')">${r.tot}</td><td class="num"><span class="chip ${r.rate>=80?'green':r.rate>=60?'amber':'red'}">${r.rate}%</span></td></tr>`).join('')||'<tr><td colspan="4" class="empty">Chưa có nguồn</td></tr>'}</tbody>`;
   // cases
   const pend=cases.filter(c=>['Pending','Đang xử lý','Chờ support'].includes(c.status));
@@ -1060,11 +1074,11 @@ async function renderDash(){
     <div style="align-self:center">TTS ${byPlat('TTS')} · AMZ ${byPlat('AMZ')} · Etsy ${byPlat('Etsy')}<br>
     <span class="muted">Thành công: ${cases.filter(c=>c.status==='Thành công').length} · Thất bại/Dừng: ${cases.filter(c=>['Thất bại','Dừng'].includes(c.status)).length}</span></div></div>`;
   // finance
-  const balUsd=accs.filter(a=>a.status==='Active').reduce((s,a)=>s+num(a.balance_usd),0);
+  const balUsd=accs.filter(a=>isActiveLike(a.status)).reduce((s,a)=>s+num(a.balance_usd),0);
   const holdUsd=accs.reduce((s,a)=>s+num(a.onhold_usd),0);
-  const holdRisk=accs.filter(a=>['Die','Suspend'].includes(a.status)).reduce((s,a)=>s+num(a.onhold_usd),0);
+  const holdRisk=accs.filter(a=>isDeadLike(a.status)).reduce((s,a)=>s+num(a.onhold_usd),0);
   const negUsd=accs.reduce((s,a)=>s+num(a.negative_usd),0);
-  const lostUsd=accs.filter(a=>a.status==='Die').reduce((s,a)=>s+num(a.balance_usd)+num(a.onhold_usd),0);
+  const lostUsd=accs.filter(a=>statusKind(a.status)==='die').reduce((s,a)=>s+num(a.balance_usd)+num(a.onhold_usd),0);
   const now=new Date(),m=now.getMonth(),y=now.getFullYear();
   const expMonth=exps.filter(e=>{const d=new Date(e.expense_date);return d.getMonth()===m&&d.getFullYear()===y;}).reduce((s,e)=>s+num(e.amount_vnd),0);
   const expAll=exps.reduce((s,e)=>s+num(e.amount_vnd),0);
@@ -1096,24 +1110,33 @@ function drawTrend(snaps){
   const empty=$('trendEmpty'),cv=$('trendChart');
   if(rows.length<2){if(empty)empty.style.display='block';if(cv)cv.style.display='none';return;}
   if(empty)empty.style.display='none';if(cv)cv.style.display='block';
-  const labels=rows.map(s=>s.week_start.slice(5));
+  const labels=rows.map(s=>{const d=s.week_start;return 'Tuần '+d.slice(8,10)+'/'+d.slice(5,7);});
   const total=rows.map(s=>num(s.tts_active)+num(s.amz_active)+num(s.etsy_active)+num(s.other_active));
+  const bad=rows.map(s=>num(s.die_total));
   const muted=getComputedStyle(document.body).getPropertyValue('--muted').trim()||'#8b92a7';
-  const ds=(lbl,key,col)=>({label:lbl,data:rows.map(s=>num(s[key])),borderColor:col,backgroundColor:col,tension:.3,pointRadius:3});
+  const green=getComputedStyle(document.body).getPropertyValue('--green').trim()||'#3ecf8e';
+  const red=getComputedStyle(document.body).getPropertyValue('--red').trim()||'#f06a6a';
+  const ds=(lbl,arr,col,fill)=>({label:lbl,data:arr,borderColor:col,backgroundColor:fill||col,tension:.35,pointRadius:4,pointHoverRadius:6,borderWidth:2.5,fill:!!fill});
+  const hidden=(lbl,key,col)=>({label:lbl,data:rows.map(s=>num(s[key])),borderColor:col,backgroundColor:col,tension:.35,pointRadius:2,borderWidth:1.5,borderDash:[4,3],hidden:true});
+  // nhận xét tự động: so tuần đầu và tuần cuối
+  const first=total[0],last=total[total.length-1];const diff=last-first;
+  const hint=$('trendHint');if(hint)hint.innerHTML=diff>0?`<span class="up">▲ Tổng active tăng ${diff} TK</span> so với tuần đầu (${first}→${last})`:diff<0?`<span class="down">▼ Tổng active giảm ${Math.abs(diff)} TK</span> so với tuần đầu (${first}→${last})`:`Tổng active giữ nguyên (${last} TK)`;
   if(_trendChart)_trendChart.destroy();
   _trendChart=new Chart(cv,{type:'line',
-    data:{labels,datasets:[{label:'Tổng active',data:total,borderColor:'#3ecf8e',backgroundColor:'#3ecf8e',tension:.3,pointRadius:3,borderWidth:2},
-      ds('TTS','tts_active','#5b8cff'),ds('AMZ','amz_active','#f2c14e'),ds('Etsy','etsy_active','#9b7bff'),ds('Die/Susp','die_total','#f06a6a')]},
-    options:{plugins:{legend:{labels:{color:muted,boxWidth:12,font:{size:11}}}},scales:{x:{ticks:{color:muted},grid:{display:false}},y:{ticks:{color:muted},grid:{color:'rgba(128,128,128,.12)'}}}}});
+    data:{labels,datasets:[
+      ds('Tổng active (tốt)',total,green,'rgba(62,207,142,.12)'),
+      ds('TK hỏng: Die+Suspend (xấu)',bad,red),
+      hidden('TTS','tts_active','#5b8cff'),hidden('AMZ','amz_active','#f2c14e'),hidden('Etsy','etsy_active','#9b7bff')]},
+    options:{interaction:{mode:'index',intersect:false},plugins:{legend:{labels:{color:muted,boxWidth:14,font:{size:11.5},usePointStyle:true}},tooltip:{titleFont:{size:12}}},scales:{x:{ticks:{color:muted,font:{size:11}},grid:{display:false}},y:{beginAtZero:true,ticks:{color:muted,precision:0},grid:{color:'rgba(128,128,128,.1)'}}}}});
 }
 function dashDrill(code,val){
   const A=window._dashAccs||[];let list=[],title='';
-  const ACT=x=>x.status==='Active',DEAD=x=>['Die','Suspend'].includes(x.status);
+  const ACT=x=>isActiveLike(x.status),DEAD=x=>isDeadLike(x.status);
   if(code==='all'){list=A;title='Tất cả tài khoản';}
   else if(code==='aTTS'||code==='aAMZ'||code==='aEtsy'){const p=code.slice(1);list=A.filter(x=>ACT(x)&&x.platform===p);title=p+' đang Active';}
   else if(code==='dead'){list=A.filter(DEAD);title='TK Die / Suspend';}
   else if(code==='sel_a'){list=A.filter(x=>x.seller===val&&ACT(x));title=val+' · Active';}
-  else if(code==='sel_d'){list=A.filter(x=>x.seller===val&&['Die','Suspend','Thu hồi'].includes(x.status));title=val+' · Die/Suspend/Thu hồi';}
+  else if(code==='sel_d'){list=A.filter(x=>x.seller===val&&(DEAD(x)||statusKind(x.status)==='withdrawn'));title=val+' · Die/Suspend/Thu hồi';}
   else if(code==='sel_cap'){list=A.filter(x=>x.seller===val&&(ACT(x)||['Die','Suspend','Thu hồi'].includes(x.status)));title=val+' · Đã cấp';}
   else if(code==='sel_all'){list=A.filter(x=>x.seller===val);title=val+' · Tất cả TK';}
   else if(code==='src_a'){list=A.filter(x=>x.source===val&&ACT(x));title='Nguồn '+val+' · Active';}
@@ -1249,10 +1272,10 @@ async function computeAlerts(){
   const A=[];const D=(k,b)=>daysBetween(b||todayStr(),k);
   const NOTSELLER=['Chưa phân','Thu hồi',''];
   const push=(o)=>A.push(o);
-  accs.forEach(a=>{if(['Die','Suspend'].includes(a.status)&&a.status_changed_at&&daysBetween(a.status_changed_at)<=1)push({lv:'hi',cat:'Vừa khóa',src:'accounts',acc:a.id,ic:'🔴',t:`TK ${a.name} chuyển ${a.status} trong 24h`,w:`seller ${a.seller} · lỗi ${a.error_type||'?'}`});
-    if(['Die','Suspend'].includes(a.status)&&num(a.onhold_usd)>500)push({lv:'hi',cat:'Tiền treo ở TK khóa',src:'accounts',acc:a.id,ic:'💰',t:`TK ${a.name} khóa — $${fmtUsd(a.onhold_usd)} on-hold`,w:`seller ${a.seller} · nguy cơ mất tiền`});});
+  accs.forEach(a=>{if(isDeadLike(a.status)&&a.status_changed_at&&daysBetween(a.status_changed_at)<=1)push({lv:'hi',cat:'Vừa khóa',src:'accounts',acc:a.id,ic:'🔴',t:`TK ${a.name} chuyển ${a.status} trong 24h`,w:`seller ${a.seller} · lỗi ${a.error_type||'?'}`});
+    if(isDeadLike(a.status)&&num(a.onhold_usd)>500)push({lv:'hi',cat:'Tiền treo ở TK khóa',src:'accounts',acc:a.id,ic:'💰',t:`TK ${a.name} khóa — $${fmtUsd(a.onhold_usd)} on-hold`,w:`seller ${a.seller} · nguy cơ mất tiền`});});
   const sellers=[...new Set(accs.map(a=>a.seller).filter(s=>s&&!NOTSELLER.includes(s)))];
-  sellers.forEach(s=>{const list=accs.filter(a=>a.seller===s);const act=list.filter(x=>x.status==='Active').length;const tot=list.filter(x=>['Active','Die','Suspend','Thu hồi'].includes(x.status)).length;if(tot>=3){const r=Math.round(act/tot*100);if(r<60)push({lv:'mid',cat:'Tỷ lệ giữ TK thấp',src:'accounts',ic:'📉',t:`${s} giữ TK ${r}%`,w:`${act}/${tot} còn active`});}});
+  sellers.forEach(s=>{const list=accs.filter(a=>a.seller===s);const act=list.filter(x=>isActiveLike(x.status)).length;const tot=list.filter(x=>isActiveLike(x.status)||isDeadLike(x.status)||statusKind(x.status)==='withdrawn').length;if(tot>=3){const r=Math.round(act/tot*100);if(r<60)push({lv:'mid',cat:'Tỷ lệ giữ TK thấp',src:'accounts',ic:'📉',t:`${s} giữ TK ${r}%`,w:`${act}/${tot} còn active`});}});
   cases.forEach(c=>{if(['Pending','Đang xử lý'].includes(c.status)){const d=daysBetween(c.date_start);if(d>3&&!c.date_appeal)push({lv:'mid',cat:'Case tồn chưa xử',src:'cases',acc:c.account_id,ic:'⚖',t:`Case ${accLabel(c.account_id)} tồn ${d} ngày`,w:`${c.error_type||''} · chưa gửi kháng`});}});
   reqs.forEach(r=>{if(r.approval_status==='Chờ duyệt'){const d=daysBetween(r.request_date);if(d>2)push({lv:'lo',cat:'Yêu cầu chờ duyệt',src:'requests',ic:'✉',t:`${r.seller} yêu cầu cấp TK`,w:`chờ ${d} ngày · ${r.account_type}`});}});
   prox.forEach(p=>{if(p.status==='Active'&&p.date_end){const d=D(p.date_end);if(d>=0&&d<=7)push({lv:'mid',cat:'Sắp hết hạn',src:'proxies',ic:'⇄',t:`Proxy ${p.profile_name||p.proxy_string} hết hạn`,w:`còn ${d} ngày · ${p.vendor||''}`});}});
