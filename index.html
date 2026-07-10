@@ -176,7 +176,7 @@
 <!-- APP -->
 <div class="app" id="app" style="display:none">
   <aside class="side collapsed" id="side">
-    <div class="logo"><div class="dot">R</div><div><b>RSA QLTK</b><small>RS Agency · v3.4</small></div>
+    <div class="logo"><div class="dot">R</div><div><b>RSA QLTK</b><small>RS Agency · v3.5</small></div>
       <button class="hamb" id="hamb">☰</button></div>
     <div class="user"><div class="av" id="uAv">?</div><div><b id="uName">—</b><small id="uRole">—</small></div>
       <div style="margin-left:auto;display:flex;gap:8px"><div class="out" id="btnTheme" title="Đổi màu">◐</div><div class="out" id="btnOut" title="Đăng xuất">⎋</div></div></div>
@@ -1014,7 +1014,7 @@ async function renderDash(){
       ${isStaff?`<div class="card"><h3>Pipeline TK mới</h3><div id="pipeBox"></div></div>`:''}
       <div class="card"><h3>Cảnh báo cao <span class="tag">cần xử ngay</span></h3><div id="dashAlerts"></div></div>
     </div>`:'';
-  const cardTrend=isStaff?`<div class="grid" style="grid-template-columns:1fr;margin-top:14px"><div class="card"><h3>Xu hướng theo tuần <span class="tag">🟢 đường xanh lên = tốt lên · 🔴 đường đỏ lên = nhiều TK hỏng</span></h3><canvas id="trendChart" style="max-height:210px"></canvas><div class="empty" id="trendEmpty" style="display:none">Cần ít nhất 2 tuần dữ liệu để vẽ. Tool tự chốt mỗi tuần — vài tuần nữa sẽ có đường.</div><div class="muted small" id="trendHint" style="text-align:center;margin-top:6px"></div></div></div>`:'';
+  const cardTrend=isStaff?`<div class="grid" style="grid-template-columns:1fr;margin-top:14px"><div class="card"><h3>So với tuần trước <span class="tag">mũi tên chỉ tăng/giảm số TK</span></h3><div id="trendCards"></div></div></div>`:'';
   $('pageArea').innerHTML=`<div class="topbar"><div><h1>Tổng quan</h1><div class="sub">${sub}</div></div></div>
     ${filterBar}
     <div class="grid kpis" id="kpis"></div>
@@ -1045,7 +1045,7 @@ async function renderDash(){
       const {error}=await sb.from('weekly_snapshots').insert(row);if(!error)snaps.push(row);
     }
   }
-  if($('trendChart'))drawTrend(snaps);
+  if($('trendCards'))drawTrend(snaps);
   const prev=snaps.filter(s=>s.week_start<wk).pop();
   const delta=(cur,pv,inverse)=>{if(filtering||!prev||pv==null)return '—';const d=cur-num(pv);if(!d)return '= tuần trước';const good=inverse?d<0:d>0;return `<span class="${good?'up':'down'}">${d>0?'↑':'↓'}${Math.abs(d)} so tuần trước</span>`;};
   $('kpis').innerHTML=[
@@ -1104,30 +1104,21 @@ async function renderDash(){
     updateAlertBadge(al);}
 }
 
-let _trendChart=null;
 function drawTrend(snaps){
+  const box=$('trendCards');if(!box)return;
   const rows=(snaps||[]).slice().sort((a,b)=>a.week_start<b.week_start?-1:1);
-  const empty=$('trendEmpty'),cv=$('trendChart');
-  if(rows.length<2){if(empty)empty.style.display='block';if(cv)cv.style.display='none';return;}
-  if(empty)empty.style.display='none';if(cv)cv.style.display='block';
-  const labels=rows.map(s=>{const d=s.week_start;return 'Tuần '+d.slice(8,10)+'/'+d.slice(5,7);});
-  const total=rows.map(s=>num(s.tts_active)+num(s.amz_active)+num(s.etsy_active)+num(s.other_active));
-  const bad=rows.map(s=>num(s.die_total));
-  const muted=getComputedStyle(document.body).getPropertyValue('--muted').trim()||'#8b92a7';
-  const green=getComputedStyle(document.body).getPropertyValue('--green').trim()||'#3ecf8e';
-  const red=getComputedStyle(document.body).getPropertyValue('--red').trim()||'#f06a6a';
-  const ds=(lbl,arr,col,fill)=>({label:lbl,data:arr,borderColor:col,backgroundColor:fill||col,tension:.35,pointRadius:4,pointHoverRadius:6,borderWidth:2.5,fill:!!fill});
-  const hidden=(lbl,key,col)=>({label:lbl,data:rows.map(s=>num(s[key])),borderColor:col,backgroundColor:col,tension:.35,pointRadius:2,borderWidth:1.5,borderDash:[4,3],hidden:true});
-  // nhận xét tự động: so tuần đầu và tuần cuối
-  const first=total[0],last=total[total.length-1];const diff=last-first;
-  const hint=$('trendHint');if(hint)hint.innerHTML=diff>0?`<span class="up">▲ Tổng active tăng ${diff} TK</span> so với tuần đầu (${first}→${last})`:diff<0?`<span class="down">▼ Tổng active giảm ${Math.abs(diff)} TK</span> so với tuần đầu (${first}→${last})`:`Tổng active giữ nguyên (${last} TK)`;
-  if(_trendChart)_trendChart.destroy();
-  _trendChart=new Chart(cv,{type:'line',
-    data:{labels,datasets:[
-      ds('Tổng active (tốt)',total,green,'rgba(62,207,142,.12)'),
-      ds('TK hỏng: Die+Suspend (xấu)',bad,red),
-      hidden('TTS','tts_active','#5b8cff'),hidden('AMZ','amz_active','#f2c14e'),hidden('Etsy','etsy_active','#9b7bff')]},
-    options:{interaction:{mode:'index',intersect:false},plugins:{legend:{labels:{color:muted,boxWidth:14,font:{size:11.5},usePointStyle:true}},tooltip:{titleFont:{size:12}}},scales:{x:{ticks:{color:muted,font:{size:11}},grid:{display:false}},y:{beginAtZero:true,ticks:{color:muted,precision:0},grid:{color:'rgba(128,128,128,.1)'}}}}});
+  if(rows.length<2){box.innerHTML='<div class="empty">Cần ít nhất 2 tuần dữ liệu. Tool tự chốt mỗi tuần — tuần sau sẽ có số so sánh.</div>';return;}
+  const cur=rows[rows.length-1],prev=rows[rows.length-2];
+  const tot=s=>num(s.tts_active)+num(s.amz_active)+num(s.etsy_active)+num(s.other_active);
+  const cell=(label,cv,pv,goodUp)=>{const d=cv-pv;const same=d===0;const good=same?null:(goodUp?d>0:d<0);
+    const cls=same?'muted':(good?'up':'down');const arrow=same?'=':(d>0?'↑':'↓');
+    return `<div class="card kpi" style="text-align:center"><div class="label">${label}</div><div class="val">${cv}</div><div class="delta ${cls}">${arrow} ${same?'giữ nguyên':Math.abs(d)+' so tuần trước'}</div></div>`;};
+  box.innerHTML=`<div class="grid" style="grid-template-columns:repeat(4,1fr);gap:12px">
+    ${cell('Tổng active',tot(cur),tot(prev),true)}
+    ${cell('TTS active',num(cur.tts_active),num(prev.tts_active),true)}
+    ${cell('AMZ active',num(cur.amz_active),num(prev.amz_active),true)}
+    ${cell('TK hỏng (Die/Susp)',num(cur.die_total),num(prev.die_total),false)}
+  </div><div class="muted small" style="margin-top:8px">Tuần này: ${cur.week_start} · tuần trước: ${prev.week_start}</div>`;
 }
 function dashDrill(code,val){
   const A=window._dashAccs||[];let list=[],title='';
