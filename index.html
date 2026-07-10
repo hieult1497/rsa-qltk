@@ -68,7 +68,7 @@
   .tbl-wrap{overflow:auto;border-radius:var(--radius)}
   table{width:100%;border-collapse:collapse}
   th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);font-size:12.5px;white-space:nowrap}
-  th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+  th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.4px;position:sticky;top:0;background:var(--panel);z-index:2}
   th.sortable{cursor:pointer;user-select:none}th.sortable:hover{color:var(--text)}
   tr:hover td{background:var(--panel2)}
   td.num,th.num{text-align:right}
@@ -176,7 +176,7 @@
 <!-- APP -->
 <div class="app" id="app" style="display:none">
   <aside class="side collapsed" id="side">
-    <div class="logo"><div class="dot">R</div><div><b>RSA QLTK</b><small>RS Agency · v3.0</small></div>
+    <div class="logo"><div class="dot">R</div><div><b>RSA QLTK</b><small>RS Agency · v3.3</small></div>
       <button class="hamb" id="hamb">☰</button></div>
     <div class="user"><div class="av" id="uAv">?</div><div><b id="uName">—</b><small id="uRole">—</small></div>
       <div style="margin-left:auto;display:flex;gap:8px"><div class="out" id="btnTheme" title="Đổi màu">◐</div><div class="out" id="btnOut" title="Đăng xuất">⎋</div></div></div>
@@ -231,6 +231,16 @@ const esc=s=>(s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','
 const todayStr=()=>new Date().toISOString().slice(0,10);
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2600);}
 function num(v){const n=Number(v);return isNaN(n)?0:n;}
+// Đọc số "lỏng": VND ("1.500.000₫" → 1500000), USD giữ thập phân ("182.45" → 182.45)
+function parseNumLoose(raw,key){
+  if(raw==null||raw==='')return null;
+  let s=String(raw).replace(/[₫$\s]/g,'').replace(/[^\d.,\-]/g,'');
+  if(s===''||s==='-')return null;
+  if((key||'').endsWith('_vnd')){return Math.round(Number(s.replace(/[.,]/g,''))||0);} // VND: bỏ mọi dấu phân cách
+  if(s.includes(',')&&s.includes('.')){s=s.replace(/,/g,'');} // 1,234.56 → 1234.56
+  else if(s.includes(',')&&!s.includes('.')){s=s.replace(/,/g,'.');} // 12,5 → 12.5
+  const n=Number(s);return isNaN(n)?null:n;
+}
 function fmtVnd(v){return num(v).toLocaleString('vi-VN');}
 function fmtUsd(v){return num(v).toLocaleString('en-US',{maximumFractionDigits:2});}
 function daysBetween(a,b){if(!a)return null;return Math.floor((new Date(b||todayStr())-new Date(a))/86400000);}
@@ -584,6 +594,8 @@ function paintRows(key){
   if(s){rows.sort((a,b)=>{let x=a[s.col],y=b[s.col];const nx=Number(x),ny=Number(y);
     if(!isNaN(nx)&&!isNaN(ny)&&x!==''&&x!=null&&y!==''&&y!=null){return (nx-ny)*s.dir;}
     return String(x??'').localeCompare(String(y??''),'vi')*s.dir;});}
+  else if(key==='accounts'){const RANK={'Active':0,'Mới':1,'Suspend':3,'Die':4,'Thu hồi':5};
+    rows.sort((a,b)=>((RANK[a.status]??2)-(RANK[b.status]??2))||String(a.name??'').localeCompare(String(b.name??''),'vi'));}
   const canEdit=['SD','PA'].includes(ME.role);
   const showAct=canEdit||key==='requests'||(key==='accounts'&&ME.role==='SELLER');
   let cnt=rows.length+' dòng';
@@ -856,7 +868,7 @@ function tplXlsx(key){
 }
 function exportXlsx(key){
   const cfg=MODULES[key];let rows=(MOD_STATE[key]||[]);
-  if(ME.role==='SELLER'&&cfg.sellerScope)rows=rows.filter(r=>r.seller===ME.seller_name);
+  if(ME.role==='SELLER'&&cfg.sellerScope)rows=rows.filter(r=>r[cfg.sellerScope]===ME.seller_name);
   const out=rows.map(r=>{const o={};cfg.fields.forEach(f=>{if(f.sensitive&&!['SD','PA'].includes(ME.role))return;let v=r[f.k];if(f.t==='acc')v=v?accLabel(v):'';o[f.l]=v??'';});return o;});
   if(!out.length)return toast('Chưa có dữ liệu để xuất');
   const ws=XLSX.utils.json_to_sheet(out);const wb=XLSX.utils.book_new();
@@ -868,21 +880,28 @@ async function importXlsx(key,file){
   const buf=await file.arrayBuffer();const wb=XLSX.read(new Uint8Array(buf),{type:'array',cellDates:true});
   const ws=wb.Sheets[wb.SheetNames[0]];const raw=XLSX.utils.sheet_to_json(ws,{defval:'',raw:false});
   if(!raw.length)return toast('File trống');
-  const labelToKey={};cfg.fields.forEach(f=>labelToKey[f.l]=f);
+  // (B) Cảnh báo nếu file không đúng cột của bảng này
+  const fileHeaders=Object.keys(raw[0]||{});
+  const matched=cfg.fields.filter(f=>fileHeaders.includes(f.l)).length;
+  if(matched===0)return toast('File không khớp cột của bảng "'+cfg.title+'". Tải "Form mẫu" để lấy đúng cột.');
   const existing=MOD_STATE[key]||[];
+  const norm=v=>String(v??'').trim().toLowerCase();
+  const seenInFile=new Set();
   const parsed=raw.map((r,i)=>{
     const o={},errs=[];
     cfg.fields.forEach(f=>{
       let v=r[f.l];if(v===''||v==null){if(f.req)errs.push('thiếu '+f.l);o[f.k]=null;return;}
-      if(f.t==='num')v=num(v);
+      if(f.t==='num')v=parseNumLoose(v,f.k);
       else if(f.t==='date'){const d=parseDateAny(v);if(!d&&v)errs.push('sai ngày '+f.l);v=d;}
-      else if(f.t==='acc'){const a=ACCOUNTS.find(x=>x.name===String(v).trim()||(x.name+' ('+x.platform+')')===String(v).trim());v=a?a.id:null;}
+      else if(f.t==='acc'){const a=ACCOUNTS.find(x=>x.name===String(v).trim()||(x.name+' ('+x.platform+')')===String(v).trim());if(!a)errs.push(f.l+' không tìm thấy TK');v=a?a.id:null;}
       else if((f.t==='sel'||f.t==='cat')){const opts=f.t==='cat'?catOpts(f.cat):f.opts;if(v&&!opts.includes(String(v).trim()))errs.push(f.l+' ngoài danh mục');v=String(v).trim();}
       o[f.k]=v;
     });
-    // trùng khóa — so chuẩn hóa (bỏ dấu cách, không phân biệt hoa/thường)
+    // trùng khóa với dữ liệu hiện có (chuẩn hóa)
     if(cfg.key&&cfg.key.every(k=>String(o[k]??'').trim()!=='')){
-      const norm=v=>String(v??'').trim().toLowerCase();
+      const sig=cfg.key.map(k=>norm(o[k])).join('||');
+      if(seenInFile.has(sig))errs.push('trùng với dòng khác trong file'); // (C) trùng nội bộ file
+      else seenInFile.add(sig);
       const dup=existing.find(e=>cfg.key.every(k=>norm(e[k])===norm(o[k])));
       if(dup)o._dup=dup.id;
     }
@@ -899,45 +918,49 @@ async function importXlsx(key,file){
       <td>${p._dup?'<span class="chip amber">trùng</span>':''}</td>
       <td>${p._errs.length?'<span class="impErr">'+esc(p._errs.join(', '))+'</span>':'<span class="chip green">OK</span>'}</td></tr>`).join('')}
     </tbody></table>`;
-  $('impInfo').innerHTML=dupCount?`Dòng trùng sẽ: <select id="impDupMode"><option value="skip">Bỏ qua</option><option value="update">Cập nhật đè</option></select>`:'';
+  $('impInfo').innerHTML=dupCount?`Dòng trùng sẽ: <select id="impDupMode"><option value="skip">Bỏ qua</option><option value="update">Cập nhật đè</option></select> <span class="muted" style="font-size:11px">("Cập nhật đè" ghi đè các ô CÓ điền trong file, trừ Trạng thái & khóa; ô để trống giữ nguyên)</span>`:'';
   $('impModal').classList.add('show');
 }
 $('impCommit').onclick=async()=>{
   const cfg=MODULES[IMP_KEY];const dupMode=$('impDupMode')?.value||'skip';
   const good=IMP_ROWS.filter(p=>!p._errs.length);
-  let ins=0,upd=0,skip=0;const fails=[];
+  const existMap={};(MOD_STATE[IMP_KEY]||[]).forEach(r=>existMap[r.id]=r);
+  const labelOf={};cfg.fields.forEach(f=>labelOf[f.k]=f.l);
+  let ins=0,upd=0,same=0,skip=0;const fails=[],changes=[];
   $('impCommit').disabled=true;
   for(const p of good){
     if(p._dup){
       if(dupMode==='skip'){skip++;continue;}
-      // CẬP NHẬT ĐÈ: chỉ ghi đè ô có dữ liệu, KHÔNG xóa trắng ô để trống
       const patch={};cfg.fields.forEach(f=>{if(p[f.k]!=null&&p[f.k]!=='')patch[f.k]=p[f.k];});
-      if(cfg.table==='accounts')delete patch.status; // import không đổi trạng thái TK
-      delete patch[cfg.key[0]];delete patch[cfg.key[1]]; // không động vào khóa
-      const {error}=await sb.from(cfg.table).update(patch).eq('id',p._dup);
-      if(error)fails.push(`Dòng ${p._row}: ${error.message}`);else upd++;
+      if(cfg.table==='accounts')delete patch.status; // trạng thái đổi qua nút riêng để giữ log
+      cfg.key.forEach(k=>delete patch[k]); // không đụng khóa
+      // SO SÁNH THẬT: chỉ giữ cột thực sự khác dữ liệu hiện tại
+      const ex=existMap[p._dup]||{};const diff={};
+      Object.keys(patch).forEach(k=>{if(String(ex[k]??'')!==String(patch[k]??''))diff[k]=patch[k];});
+      if(!Object.keys(diff).length){same++;continue;} // trùng y hệt → không đè
+      const {error}=await sb.from(cfg.table).update(diff).eq('id',p._dup);
+      if(error){fails.push(`Dòng ${p._row}: ${error.message}`);}
+      else{upd++;changes.push({row:p._row,name:p.name||p.content||p.gmail||p.batch_name||p.brand||p.llc_name||p.person||p.login_id||('#'+p._dup),
+        fields:Object.keys(diff).map(k=>`${labelOf[k]||k}: "${esc(String(ex[k]??''))}"→"${esc(String(diff[k]??''))}"`)});}
     }else{
       const payload={};cfg.fields.forEach(f=>{if(p[f.k]!=null&&p[f.k]!=='')payload[f.k]=p[f.k];});
       if(cfg.userCol)payload[cfg.userCol]=ME.id;
       const {error}=await sb.from(cfg.table).insert(payload);
-      if(error){
-        if(error.code==='23505')fails.push(`Dòng ${p._row}: trùng dữ liệu (DB chặn) — chọn "Cập nhật đè" để ghi đè`);
-        else fails.push(`Dòng ${p._row}: ${error.message}`);
-      }else ins++;
+      if(error){fails.push(`Dòng ${p._row}: ${error.code==='23505'?'trùng khóa (DB chặn) — chọn Cập nhật đè':error.message}`);}
+      else ins++;
     }
   }
-  await logAct('Nhập Excel',cfg.table,cfg.title,`thêm ${ins}, cập nhật ${upd}, bỏ qua ${skip}, lỗi ${fails.length}`);
+  await logAct('Nhập Excel',cfg.table,cfg.title,`thêm ${ins}, cập nhật ${upd}, trùng y hệt ${same}, bỏ qua ${skip}, lỗi ${fails.length}`);
   $('impCommit').disabled=false;
-  if(fails.length){
-    $('impInfo').innerHTML='';
-    $('impBody').innerHTML=`<div style="margin-bottom:10px"><b style="color:var(--green)">+${ins} mới</b> · <b>${upd} cập nhật</b> · ${skip} bỏ qua · <b style="color:var(--red)">${fails.length} lỗi</b></div>
-      <div class="card" style="background:rgba(240,106,106,.08);border-color:rgba(240,106,106,.3)"><b style="color:var(--red)">Các dòng lỗi (chưa nhập):</b>
-      <ul style="margin:8px 0 0 18px;font-size:12.5px;line-height:1.7">${fails.slice(0,40).map(f=>`<li>${esc(f)}</li>`).join('')}</ul></div>`;
-    toast(`Có ${fails.length} dòng lỗi — xem chi tiết trong bảng`);
-  }else{
-    $('impModal').classList.remove('show');
-    toast(`Nhập xong: +${ins} mới, ${upd} cập nhật, ${skip} bỏ qua`);
-  }
+  $('impInfo').innerHTML='';
+  const statusNote=cfg.table==='accounts'?'<div class="muted" style="font-size:11.5px;margin-top:8px">Lưu ý: import KHÔNG đổi cột Trạng thái (đổi qua nút "Đổi trạng thái" để giữ lịch sử).</div>':'';
+  let panel=`<div style="margin-bottom:10px;font-size:13px"><b style="color:var(--green)">+${ins} mới</b> · <b style="color:var(--blue)">${upd} cập nhật</b> · ${same} trùng y hệt (bỏ qua) · ${skip} bỏ qua · <b style="color:var(--red)">${fails.length} lỗi</b></div>`;
+  if(!upd&&!ins&&same){panel+=`<div class="card" style="background:rgba(242,193,78,.1);border-color:rgba(242,193,78,.3)">Tất cả dòng trùng có nội dung <b>y hệt dữ liệu hiện tại</b> nên không có gì để ghi đè. Muốn thấy thay đổi, sửa giá trị trong file Excel rồi nhập lại.${statusNote}</div>`;}
+  if(changes.length){panel+=`<div class="card" style="margin-top:8px"><b>Đã ghi đè ${changes.length} dòng — chi tiết:</b><ul style="margin:8px 0 0 16px;font-size:12px;line-height:1.7">${changes.slice(0,50).map(c=>`<li><b>${esc(c.name)}</b> (dòng ${c.row}): ${c.fields.join(' · ')}</li>`).join('')}</ul>${statusNote}</div>`;}
+  if(fails.length){panel+=`<div class="card" style="margin-top:8px;background:rgba(240,106,106,.08);border-color:rgba(240,106,106,.3)"><b style="color:var(--red)">Các dòng lỗi (chưa nhập):</b><ul style="margin:8px 0 0 16px;font-size:12px;line-height:1.7">${fails.slice(0,40).map(f=>`<li>${esc(f)}</li>`).join('')}</ul></div>`;}
+  if(ins&&!upd&&!fails.length&&!same){$('impModal').classList.remove('show');toast(`Nhập xong: +${ins} mới`);}
+  else{$('impBody').innerHTML=panel;}
+  toast(`+${ins} mới · ${upd} cập nhật · ${same} trùng · ${fails.length} lỗi`);
   renderModule(IMP_KEY);
 };
 
